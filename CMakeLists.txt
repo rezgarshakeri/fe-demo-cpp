@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.20)
 project(mini_fem LANGUAGES CXX)
 
 # ---------- Options ----------
-option(MINIFEM_ENABLE_MPI  "Enable MPI support"  OFF)
+option(MINIFEM_ENABLE_MPI  "Enable MPI support"  ON)
 option(MINIFEM_ENABLE_CUDA "Enable CUDA support" OFF)
 option(MINIFEM_BUILD_TESTS "Build unit tests"    ON)
 
@@ -19,6 +19,7 @@ endif()
 # ---------- Library ----------
 file(GLOB MINIFEM_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/src/mpi/*.cpp"
 )
 
 add_library(mini_fem STATIC ${MINIFEM_SOURCES})
@@ -37,11 +38,17 @@ if(UNIX AND NOT APPLE)
   target_link_options(mini_fem PUBLIC -rdynamic)
 endif()
 
-# ---------- MPI (TODO) ----------
+# ---------- MPI ----------
 if(MINIFEM_ENABLE_MPI)
   find_package(MPI REQUIRED)
   target_link_libraries(mini_fem PUBLIC MPI::MPI_CXX)
   target_compile_definitions(mini_fem PUBLIC MINIFEM_USE_MPI=1)
+  add_executable(halo_print examples/halo_print.cpp)
+  target_link_libraries(halo_print PRIVATE mini_fem MPI::MPI_CXX)
+  add_executable(apply_mpi_check examples/apply_mpi_check.cpp)
+  target_link_libraries(apply_mpi_check PRIVATE mini_fem MPI::MPI_CXX)
+  add_executable(poisson1D_mpi examples/poisson1D_mpi.cpp)
+  target_link_libraries(poisson1D_mpi PRIVATE mini_fem MPI::MPI_CXX)
 endif()
 
 # ---------- CUDA (TODO) ----------
@@ -58,6 +65,12 @@ endif()
 # ---------- Example executable ----------
 add_executable(poisson1D examples/poisson1D.cpp)
 target_link_libraries(poisson1D PRIVATE mini_fem)
+
+add_executable(mpi_hello examples/mpi_hello.cpp)
+target_link_libraries(mpi_hello PRIVATE MPI::MPI_CXX)
+
+add_executable(dist1d_print examples/dist1d_print.cpp)
+target_link_libraries(dist1d_print PRIVATE mini_fem MPI::MPI_CXX)
 
 # ---------- Unit tests ----------
 if(MINIFEM_BUILD_TESTS)
