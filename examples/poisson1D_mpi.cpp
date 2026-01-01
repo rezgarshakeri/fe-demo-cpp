@@ -13,6 +13,9 @@
 #include <vector>
 #include <cmath>
 
+#include "mpi/timer.hpp"
+namespace fem1d::mpi { extern TimerDB g_timers; }
+
 static double l2_norm_sq(const std::vector<double>& a) {
   double s = 0.0;
   for (double v : a) s += v*v;
@@ -71,6 +74,8 @@ int main(int argc, char** argv) {
     }
     std::cout << "||x_mpi - x_serial||_2^2 = " << err << "\n";
   }
+
+  fem1d::mpi::g_timers.print_rank0(dist.comm, dist.rank);
 
   MPI_Finalize();
   return 0;

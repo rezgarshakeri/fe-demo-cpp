@@ -1,8 +1,11 @@
 #include "mpi/mpi-linear-solver.hpp"
+#include "mpi/timer.hpp"
 #include <cmath>
 #include <cassert>
 
 namespace fem1d::mpi {
+
+extern TimerDB g_timers;
 
 static double dot_owned(const MpiVector& a, const MpiVector& b) {
   assert(a.n_owned == b.n_owned);
@@ -10,7 +13,10 @@ static double dot_owned(const MpiVector& a, const MpiVector& b) {
   for (int i = 0; i < a.n_owned; ++i) local += a.data[i] * b.data[i];
 
   double global = 0.0;
-  MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, a.dist->comm);
+  {
+    ScopedTimer t(g_timers, "cg_allreduce_dot");
+    MPI_Allreduce(&local, &global, 1, MPI_DOUBLE, MPI_SUM, a.dist->comm);
+  }
   return global;
 }
 
@@ -34,13 +40,17 @@ CGResult conjugate_gradient(const MpiOperator& A,
                             const MpiVector&  b,
                             MpiVector&        x,
                             const CGOptions&  opts) {
+  ScopedTimer t_total(g_timers, "cg_total");
   // Basic checks: same distribution
   assert(x.dist == b.dist);
 
   MpiVector r(*x.dist), p(*x.dist), Ap(*x.dist);
 
   // r = b - A x
-  A.apply(x, Ap);
+  {
+    ScopedTimer t(g_timers, "cg_apply");
+    A.apply(x, Ap);
+  }
   for (int i = 0; i < x.n_owned; ++i) r.data[i] = b.data[i] - Ap.data[i];
 
   // p = r
@@ -59,7 +69,10 @@ CGResult conjugate_gradient(const MpiOperator& A,
 
   for (int k = 0; k < opts.max_iters; ++k) {
     // Ap = A p
-    A.apply(p, Ap);
+    {
+      ScopedTimer t(g_timers, "cg_apply");
+      A.apply(p, Ap);
+    }
 
     const double pAp = dot_owned(p, Ap);
     // If pAp is zero/negative (breakdown), stop.
