@@ -105,4 +105,78 @@ CGResult conjugate_gradient(const MpiOperator& A,
   return result;
 }
 
+
+CGResult pcg(const MpiOperator& A,
+             const Preconditioner& M,
+             const MpiVector& b,
+             MpiVector& x,
+             const CGOptions& opts) {
+  ScopedTimer t_total(g_timers, "pcg_total");
+  assert(x.dist == b.dist);
+
+  MpiVector r(*x.dist), z(*x.dist), p(*x.dist), Ap(*x.dist);
+
+  // r = b - A x
+  {
+    ScopedTimer t(g_timers, "pcg_apply");
+    A.apply(x, Ap);
+  }
+  for (int i = 0; i < x.n_owned; ++i) r.data[i] = b.data[i] - Ap.data[i];
+
+  // z = M^{-1} r
+  M.apply(r, z);
+
+  // p = z
+  copy_owned(z, p);
+
+  const double r0_sq = dot_owned(r, r);
+  const double r0    = std::sqrt(r0_sq);
+
+  CGResult result{0, r0};
+  if (r0 == 0.0) return result;
+
+  double rzold = dot_owned(r, z);
+
+  // To confirm M is used in Jacobi Jacobi, rz0/r0_sq should be about the scale of inv_diag (\approx O(h)). It won’t be 1.0.
+  // For 1D Poisson with Dirichlet, diagonal \approx O(E/h
+  if (x.dist->rank == 0) {
+  std::cout << "r0=" << r0
+            << "  rz0=" << rzold
+            << "  (rz0/r0_sq)=" << (rzold / r0_sq) << "\n";
+  }
+
+  for (int k = 0; k < opts.max_iters; ++k) {
+    {
+      ScopedTimer t(g_timers, "pcg_apply");
+      A.apply(p, Ap);
+    }
+
+    const double pAp = dot_owned(p, Ap);
+    if (pAp <= 0.0) break;
+
+    const double alpha = rzold / pAp;
+
+    axpy_owned(alpha, p, x);      // x = x + alpha p
+    axpy_owned(-alpha, Ap, r);    // r = r - alpha Ap
+
+    const double rsnew = dot_owned(r, r);
+    const double rnorm = std::sqrt(rsnew);
+
+    result.iters = k + 1;
+    result.final_res_norm = rnorm;
+    if (rnorm <= opts.rtol * r0) break;
+
+    // z = M^{-1} r
+    M.apply(r, z);
+
+    const double rznew = dot_owned(r, z);
+    const double beta  = rznew / rzold;
+
+    xpay_owned(z, beta, p);       // p = z + beta p
+    rzold = rznew;
+  }
+
+  return result;
+}
+
 } // namespace fem1d::mpi

@@ -8,7 +8,7 @@
 using namespace fem1d;
 
 int main() {
-    int    Ne = 1000;
+    int    Ne = 1e5;
     double x0 = 0.0, x1 = 1.0;
     double E  = 1.0;
 
@@ -17,8 +17,9 @@ int main() {
 
     std::vector<double> b(num_nodes, 0.0);
     // build RHS f(x) ≈ 1, simple lumped load:
+    const double h = (x1 - x0) / Ne;
     for (int i = 0; i < num_nodes; ++i) {
-        b[i] = 1.0; // TODO: scale properly by h, etc.
+        b[i] = h;
     }
 
     b[0] = 0.0;

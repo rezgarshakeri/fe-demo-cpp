@@ -14,6 +14,8 @@
 #include <cmath>
 
 #include "mpi/timer.hpp"
+#include "mpi/jacobi-poisson1d.hpp"
+
 namespace fem1d::mpi { extern TimerDB g_timers; }
 
 static double l2_norm_sq(const std::vector<double>& a) {
@@ -25,7 +27,7 @@ static double l2_norm_sq(const std::vector<double>& a) {
 int main(int argc, char** argv) {
   MPI_Init(&argc, &argv);
 
-  int    Ne = 1000;
+  int    Ne = 1e5;
   double x0 = 0.0, x1 = 1.0;
   double E  = 1.0;
 
@@ -36,22 +38,25 @@ int main(int argc, char** argv) {
   fem1d::mpi::MpiVector x(dist, 0.0, 0.0);
 
   // RHS: simple test, e.g., b=1 interior, 0 on Dirichlet endpoints
+  const double h = (x1 - x0) / Ne;
   for (int i = 0; i < b.n_owned; ++i) {
     const int g = b.global_owned(i);
-    b.owned(i) = 1.0;
+    b.owned(i) = h;
     if (g == 0 || g == dist.N_global - 1) b.owned(i) = 0.0;
   }
 
   fem1d::mpi::MpiMatrixFreePoisson1D A(mesh, dist, E);
 
   fem1d::CGOptions opts;
-  opts.max_iters = 500;
-  opts.rtol = 1e-8;
+  opts.max_iters = 5000; // CG iteration is \approx O(Ne)
+  opts.rtol = 1e-6;
 
-  auto res = fem1d::mpi::conjugate_gradient(A, b, x, opts);
+  // auto res = fem1d::mpi::conjugate_gradient(A, b, x, opts);
+  fem1d::mpi::JacobiPoisson1D M(mesh, x, E);
+  auto res = fem1d::mpi::pcg(A, M, b, x, opts);
 
   if (dist.rank == 0) {
-    std::cout << "MPI CG: iters=" << res.iters
+    std::cout << "MPI PCG: iters=" << res.iters
               << ", residual=" << res.final_res_norm << "\n";
   }
 
