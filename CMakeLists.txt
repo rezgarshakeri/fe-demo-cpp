@@ -3,7 +3,7 @@ project(mini_fem LANGUAGES CXX)
 
 # ---------- Options ----------
 option(MINIFEM_ENABLE_MPI  "Enable MPI support"  ON)
-option(MINIFEM_ENABLE_CUDA "Enable CUDA support" OFF)
+option(MINIFEM_ENABLE_CUDA "Enable CUDA support" ON)
 option(MINIFEM_BUILD_TESTS "Build unit tests"    ON)
 
 # ---------- C++ standard ----------
@@ -19,8 +19,14 @@ endif()
 # ---------- Library ----------
 file(GLOB MINIFEM_SOURCES CONFIGURE_DEPENDS
   "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
-  "${CMAKE_CURRENT_SOURCE_DIR}/src/mpi/*.cpp"
 )
+
+if(MINIFEM_ENABLE_MPI)
+  file(GLOB MINIFEM_MPI_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mpi/*.cpp"
+  )
+  list(APPEND MINIFEM_SOURCES ${MINIFEM_MPI_SOURCES})
+endif()
 
 add_library(mini_fem STATIC ${MINIFEM_SOURCES})
 target_include_directories(mini_fem PUBLIC
@@ -49,28 +55,49 @@ if(MINIFEM_ENABLE_MPI)
   target_link_libraries(apply_mpi_check PRIVATE mini_fem MPI::MPI_CXX)
   add_executable(poisson1D_mpi examples/poisson1D_mpi.cpp)
   target_link_libraries(poisson1D_mpi PRIVATE mini_fem MPI::MPI_CXX)
+
+  add_executable(mpi_hello examples/mpi_hello.cpp)
+  target_link_libraries(mpi_hello PRIVATE MPI::MPI_CXX)
+
+  add_executable(dist1d_print examples/dist1d_print.cpp)
+  target_link_libraries(dist1d_print PRIVATE mini_fem MPI::MPI_CXX)
 endif()
 
-# ---------- CUDA (TODO) ----------
+# ---------- CUDA ----------
 if(MINIFEM_ENABLE_CUDA)
   enable_language(CUDA)
   set(CMAKE_CUDA_STANDARD 17)
   set(CMAKE_CUDA_STANDARD_REQUIRED ON)
-  target_compile_definitions(mini_fem PUBLIC MINIFEM_USE_CUDA=1)
+  # For my laptop: Quadro P520 = Pascal, compute capability 6.1 (sm_61)
+  set(CMAKE_CUDA_ARCHITECTURES 61)
 
-  # Later we need .cu files like:
-  # target_sources(mini_fem PRIVATE src/cuda/mf_apply.cu)
+  add_library(mini_fem_cuda STATIC
+    src/cuda/cuda-device-vector.cu
+    src/cuda/cuda-matrix-free.cu
+  )
+
+  target_include_directories(mini_fem_cuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+  target_link_libraries(mini_fem_cuda PRIVATE mini_fem)
+
+  # Good defaults
+  set_target_properties(mini_fem_cuda PROPERTIES
+    CUDA_SEPARABLE_COMPILATION ON
+  )
+
+  target_compile_options(mini_fem_cuda PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:--use_fast_math>
+  )
+
+  # MPI+CUDA example (only if MPI is enabled too)
+  if(MINIFEM_ENABLE_MPI)
+    add_executable(poisson1D_mpi_cuda examples/poisson1D_mpi_cuda.cpp)
+    target_link_libraries(poisson1D_mpi_cuda PRIVATE mini_fem mini_fem_cuda MPI::MPI_CXX)
+  endif()
 endif()
 
 # ---------- Example executable ----------
 add_executable(poisson1D examples/poisson1D.cpp)
 target_link_libraries(poisson1D PRIVATE mini_fem)
-
-add_executable(mpi_hello examples/mpi_hello.cpp)
-target_link_libraries(mpi_hello PRIVATE MPI::MPI_CXX)
-
-add_executable(dist1d_print examples/dist1d_print.cpp)
-target_link_libraries(dist1d_print PRIVATE mini_fem MPI::MPI_CXX)
 
 # ---------- Unit tests ----------
 if(MINIFEM_BUILD_TESTS)
