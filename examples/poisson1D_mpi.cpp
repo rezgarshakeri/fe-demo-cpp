@@ -27,7 +27,7 @@ static double l2_norm_sq(const std::vector<double>& a) {
 int main(int argc, char** argv) {
   MPI_Init(&argc, &argv);
 
-  int    Ne = 1e5;
+  int    Ne = 1000;
   double x0 = 0.0, x1 = 1.0;
   double E  = 1.0;
 
