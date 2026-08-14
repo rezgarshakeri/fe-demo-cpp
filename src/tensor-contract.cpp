@@ -4,6 +4,12 @@
 
 namespace fem {
 
+  static int int_pow(int base, int exp) {
+    int result = 1;
+    for (int i = 0; i < exp; ++i) result *= base;
+    return result;
+  }
+
 /**
   @brief Batched contraction along one tensor mode
     The contraction is:
@@ -52,4 +58,62 @@ void tensor_contract_apply(int A, int B, int C, int J,
   }
 }
 
-} // namespace fem
+/**
+  @brief Interpolate nodal values to quadrature-point values (num_comp=1, num_elem=1)
+
+  @param[in]  basis The TensorBasis to apply (uses dim, P_1d, Q_1d, interp_1d)
+  @param[in]  u     Nodal values, P_1d^dim entries, row-major with axis 0 fastest
+  @param[out] v     Quadrature-point values, Q_1d^dim entries, same convention
+
+  @ref libCEED's CeedBasisApplyCore_Ref, CEED_EVAL_INTERP case
+       (libCEED/backends/ref/ceed-ref-basis.c)
+**/
+void tensor_basis_apply_interp(const TensorBasis& basis, const std::vector<double>& u,
+                               std::vector<double>& v) {
+  int P = basis.P_1d, Q = basis.Q_1d, dim = basis.dim;
+  int pre = 1 * int_pow(P, dim - 1), post = 1;
+  std::vector<double> tmp[2];
+
+  for (int d = 0; d < dim; d++) {
+    tensor_contract_apply(pre, P, post, Q, basis.interp_1d, fem::ContractMode::NoTranspose, false, d == 0 ? u : tmp[d % 2],
+                                            d == dim - 1 ? v : tmp[(d + 1) % 2]);
+    pre /= P;
+    post *= Q;
+  }
+}
+
+/**
+  @brief Gradient at quadrature points (num_comp=1, num_elem=1)
+
+  @param[in]  basis The TensorBasis to apply (uses dim, P_1d, Q_1d, interp_1d, grad_1d)
+  @param[in]  u     Nodal values, P_1d^dim entries, row-major with axis 0 fastest
+  @param[out] v     dim blocks of Q_1d^dim entries each; block d_axis is d/dx_{d_axis}
+
+  @ref libCEED's CeedBasisApplyCore_Ref, CEED_EVAL_GRAD case
+       (libCEED/backends/ref/ceed-ref-basis.c)
+**/
+void tensor_basis_apply_grad(const TensorBasis& basis, const std::vector<double>& u,
+                             std::vector<double>& v) {
+  int P = basis.P_1d, Q = basis.Q_1d, dim = basis.dim;
+  int Qdim = int_pow(Q, dim);
+  v.resize(dim * Qdim);
+
+  for (int d_axis = 0; d_axis < dim; ++d_axis) {
+    int pre = int_pow(P, dim - 1), post = 1;
+    std::vector<double> tmp[2], component;
+    for (int d = 0; d < dim; ++d) {
+      const auto& bb = (d == d_axis) ? basis.grad_1d : basis.interp_1d;
+      tensor_contract_apply(pre, P, post, Q, bb, ContractMode::NoTranspose, false,
+                             d == 0 ? u : tmp[d % 2],
+                             d == dim - 1 ? component : tmp[(d + 1) % 2]);
+      pre /= P;
+      post *= Q;
+    }
+    // component now holds this axis's derivative, Qdim entries
+    // copy into its slice of v, since tensor_contract_apply would otherwise
+    // resize/overwrite all of v rather than just this block.
+    std::copy(component.begin(), component.end(), v.begin() + d_axis * Qdim);
+  }
+} 
+
+}// namespace fem
