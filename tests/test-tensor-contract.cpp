@@ -107,8 +107,8 @@ TEST_CASE("tensor_contract_apply matches a naive computation using real TensorBa
 // the basis, and compare against the function (interp) or its exact
 // gradient (grad) evaluated directly at the Q_1d Gauss quadrature
 // points. High-order Lagrange interpolation of a smooth (entire)
-// function converges spectrally -- by P_1d=16 the error has already
-// hit the floating-point round-off floor (~1e-13), not just "small".
+// function converges spectrally. By P_1d=16 the error has already
+// hit the floating-point round-off floor (~1e-13).
 // ---------------------------------------------------------------------
 
 TEST_CASE("tensor_basis_apply_interp matches an analytic function in 1D",
@@ -118,11 +118,9 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 1D",
 
   // u(x) = sin(x) + x^2, sampled at the Lobatto nodes.
   std::vector<double> u;
+  std::vector<double> nodes;
+  fem::gauss_lobatto_points(P_1d, nodes);
   for (int i = 0; i < P_1d; ++i) {
-    // Lobatto nodes aren't directly exposed on TensorBasis (only q_ref_1d,
-    // the quadrature points), so recompute them the same way TensorBasis does.
-    std::vector<double> nodes, node_weights;
-    fem::gauss_lobatto_points(P_1d, nodes, node_weights);
     double x = nodes[i];
     u.push_back(std::sin(x) + x * x);
   }
@@ -143,8 +141,8 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 1D",
   const int P_1d = 16, Q_1d = 16;
   auto basis = fem::TensorBasis::create_tensor_H1_lagrange(1, P_1d, Q_1d);
 
-  std::vector<double> nodes, node_weights;
-  fem::gauss_lobatto_points(P_1d, nodes, node_weights);
+  std::vector<double> nodes;
+  fem::gauss_lobatto_points(P_1d, nodes);
 
   // u(x) = sin(x) + x^2, u'(x) = cos(x) + 2x
   std::vector<double> u;
@@ -169,8 +167,8 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 2D",
   const int P_1d = 16, Q_1d = 16;
   auto basis = fem::TensorBasis::create_tensor_H1_lagrange(2, P_1d, Q_1d);
 
-  std::vector<double> nodes, node_weights;
-  fem::gauss_lobatto_points(P_1d, nodes, node_weights);
+  std::vector<double> nodes;
+  fem::gauss_lobatto_points(P_1d, nodes);
 
   // u(x,y) = sin(x) + cos(x*y) + x*y
   std::vector<double> u(P_1d * P_1d);
@@ -199,8 +197,8 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 2D",
   const int P_1d = 16, Q_1d = 16;
   auto basis = fem::TensorBasis::create_tensor_H1_lagrange(2, P_1d, Q_1d);
 
-  std::vector<double> nodes, node_weights;
-  fem::gauss_lobatto_points(P_1d, nodes, node_weights);
+  std::vector<double> nodes;
+  fem::gauss_lobatto_points(P_1d, nodes);
 
   // u(x,y) = sin(x) + cos(x*y) + x*y
   // du/dx = cos(x) - y*sin(x*y) + y
@@ -235,8 +233,8 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 3D",
   const int P_1d = 16, Q_1d = 16;
   auto basis = fem::TensorBasis::create_tensor_H1_lagrange(3, P_1d, Q_1d);
 
-  std::vector<double> nodes, node_weights;
-  fem::gauss_lobatto_points(P_1d, nodes, node_weights);
+  std::vector<double> nodes;
+  fem::gauss_lobatto_points(P_1d, nodes);
 
   // u(x,y,z) = sin(x) + cos(x*y) + x*y*z
   std::vector<double> u(P_1d * P_1d * P_1d);
@@ -270,8 +268,8 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 3D",
   const int P_1d = 16, Q_1d = 16;
   auto basis = fem::TensorBasis::create_tensor_H1_lagrange(3, P_1d, Q_1d);
 
-  std::vector<double> nodes, node_weights;
-  fem::gauss_lobatto_points(P_1d, nodes, node_weights);
+  std::vector<double> nodes;
+  fem::gauss_lobatto_points(P_1d, nodes);
 
   // u(x,y,z) = sin(x) + cos(x*y) + x*y*z
   // du/dx = cos(x) - y*sin(x*y) + y*z

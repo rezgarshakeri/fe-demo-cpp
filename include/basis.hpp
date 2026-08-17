@@ -6,7 +6,9 @@ namespace fem {
 // 1D Gauss-Legendre quadrature on the reference interval [-1, 1].
 void gauss_legendre_quadrature(int Q, std::vector<double>& q_ref_1d, std::vector<double>& q_weight_1d);
 // 1D Gauss-Lobatto points on [-1, 1]: the two endpoints -1, 1 plus the
-void gauss_lobatto_points(int Q, std::vector<double>& q_ref_1d, std::vector<double>& q_weight_1d);
+// interior roots of P'_{Q-1}. q_weight_1d is optional
+void gauss_lobatto_points(int Q, std::vector<double>& q_ref_1d,
+                           std::vector<double>* q_weight_1d = nullptr);
 
 // Evaluate all P Lagrange basis functions built on `nodes` (and their derivatives) at every point in `eval_points`, using Fornberg's (1998)
 void lagrange_basis_matrix(const std::vector<double>& nodes, const std::vector<double>& eval_points, std::vector<double>& interp_1d, std::vector<double>& grad_1d);

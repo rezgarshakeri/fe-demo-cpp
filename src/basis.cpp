@@ -71,22 +71,22 @@ void gauss_legendre_quadrature(int Q,
 /**
   @brief Construct a Gauss-Legendre-Lobatto quadrature
 
-  @param[in]  Q           Number of points (endpoints -1, 1 plus interior roots of P'_{Q-1});
-                           TensorBasis only uses this for node placement and ignores q_weight_1d
+  @param[in]  Q           Number of points (endpoints -1, 1 plus interior roots of P'_{Q-1})
   @param[out] q_ref_1d    Resized to length `Q`, holds the abscissa on `[-1, 1]`, sorted ascending
-  @param[out] q_weight_1d Resized to length `Q`, holds the weights
+  @param[out] q_weight_1d Optional; if non-null, resized to length `Q` and filled with the weights.
+                          Pass nullptr (the default) when only node placement is needed.
 
   @throw std::invalid_argument if `Q <= 1`
 **/
 void gauss_lobatto_points(int Q, std::vector<double>& q_ref_1d,
-                                std::vector<double>& q_weight_1d) {
+                           std::vector<double>* q_weight_1d) {
   if (Q <= 1) {
     throw std::invalid_argument("Cannot create Lobatto quadrature with Q <= 1");
   }
 
   double P0, P1, P2, dP2, d2P2, xi, wi;
   q_ref_1d.resize(Q);
-  q_weight_1d.resize(Q);
+  if (q_weight_1d) q_weight_1d->resize(Q);
 
   const double PI = 4.0 * atan(1.0);
   const double EPSILON = 10 * std::numeric_limits<double>::epsilon();
@@ -94,9 +94,11 @@ void gauss_lobatto_points(int Q, std::vector<double>& q_ref_1d,
   // Set endpoints
   q_ref_1d[0] = -1.0;
   q_ref_1d[Q - 1] = 1.0;
-  wi = 2.0 / (Q * (Q - 1));
-  q_weight_1d[0] = wi;
-  q_weight_1d[Q - 1] = wi;
+  if (q_weight_1d) {
+    wi = 2.0 / (Q * (Q - 1));
+    (*q_weight_1d)[0] = wi;
+    (*q_weight_1d)[Q - 1] = wi;
+  }
 
   // Interior points
   for (int i = 1; i <= (Q - 1) / 2; i++) {
@@ -131,11 +133,13 @@ void gauss_lobatto_points(int Q, std::vector<double>& q_ref_1d,
       xi -= dP2 / d2P2;
     }
     // Store the root and its weight
-    wi = 2.0 / ((Q * (Q - 1)) * P2 * P2);
-    q_weight_1d[i] = wi;
-    q_weight_1d[Q - 1 - i] = wi;
     q_ref_1d[i] = -xi;
     q_ref_1d[Q - 1 - i] = xi;
+    if (q_weight_1d) {
+      wi = 2.0 / ((Q * (Q - 1)) * P2 * P2);
+      (*q_weight_1d)[i] = wi;
+      (*q_weight_1d)[Q - 1 - i] = wi;
+    }
   }
 }
 
@@ -205,13 +209,13 @@ TensorBasis TensorBasis::create_tensor_H1_lagrange(int dim, int P_1d, int Q_1d,
   if (Q_1d < 1) {
     throw std::invalid_argument("create_tensor_H1_lagrange: Q_1d must be >= 1");
   }
-  std::vector<double> nodes, node_weights;  // node_weights unused, just to satisfy the signature
-  gauss_lobatto_points(P_1d, nodes, node_weights);
+  std::vector<double> nodes;
+  gauss_lobatto_points(P_1d, nodes);  // weights not needed for node placement
   std::vector<double> q_ref_1d, q_weight_1d, interp_1d, grad_1d;
   if (quad_mode == QuadMode::Gauss) {
     gauss_legendre_quadrature(Q_1d, q_ref_1d, q_weight_1d);
   } else if (quad_mode == QuadMode::GaussLobatto) {
-    gauss_lobatto_points(Q_1d, q_ref_1d, q_weight_1d);
+    gauss_lobatto_points(Q_1d, q_ref_1d, &q_weight_1d);
   } else {
     throw std::invalid_argument("create_tensor_H1_lagrange: unknown quad_mode");
   }

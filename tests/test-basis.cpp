@@ -62,8 +62,8 @@ TEST_CASE("Gauss-Legendre quadrature is exact for polynomials up to degree 2Q-1"
 
 TEST_CASE("Gauss-Lobatto points include the endpoints and are sorted", "[basis][quadrature]") {
   for (int P = 2; P <= 5; ++P) {
-    std::vector<double> points, weights;
-    fem::gauss_lobatto_points(P, points, weights);
+    std::vector<double> points;
+    fem::gauss_lobatto_points(P, points);
 
     REQUIRE(points.size() == static_cast<size_t>(P));
     REQUIRE(points.front() == Approx(-1.0).margin(1e-12));
@@ -77,7 +77,7 @@ TEST_CASE("Gauss-Lobatto points include the endpoints and are sorted", "[basis][
 TEST_CASE("Gauss-Lobatto weights sum to the length of [-1, 1]", "[basis][quadrature]") {
   for (int P = 2; P <= 5; ++P) {
     std::vector<double> points, weights;
-    fem::gauss_lobatto_points(P, points, weights);
+    fem::gauss_lobatto_points(P, points, &weights);
 
     REQUIRE(weights.size() == static_cast<size_t>(P));
     double sum_w = 0.0;
@@ -87,15 +87,15 @@ TEST_CASE("Gauss-Lobatto weights sum to the length of [-1, 1]", "[basis][quadrat
 }
 
 TEST_CASE("Gauss-Lobatto points for P=2 are exactly the endpoints", "[basis][quadrature]") {
-  std::vector<double> points, weights;
-  fem::gauss_lobatto_points(2, points, weights);
+  std::vector<double> points;
+  fem::gauss_lobatto_points(2, points);
   REQUIRE(points[0] == Approx(-1.0).margin(1e-12));
   REQUIRE(points[1] == Approx(1.0).margin(1e-12));
 }
 
 TEST_CASE("Gauss-Lobatto points for P=3 are {-1, 0, 1}", "[basis][quadrature]") {
-  std::vector<double> points, weights;
-  fem::gauss_lobatto_points(3, points, weights);
+  std::vector<double> points;
+  fem::gauss_lobatto_points(3, points);
   REQUIRE(points[0] == Approx(-1.0).margin(1e-12));
   REQUIRE(points[1] == Approx(0.0).margin(1e-12));
   REQUIRE(points[2] == Approx(1.0).margin(1e-12));
