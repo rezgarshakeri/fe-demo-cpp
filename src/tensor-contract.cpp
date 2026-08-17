@@ -59,19 +59,21 @@ void tensor_contract_apply(int A, int B, int C, int J,
 }
 
 /**
-  @brief Interpolate nodal values to quadrature-point values (num_comp=1, num_elem=1)
+  @brief Interpolate nodal values to quadrature-point values
 
-  @param[in]  basis The TensorBasis to apply (uses dim, P_1d, Q_1d, interp_1d)
-  @param[in]  u     Nodal values, P_1d^dim entries, row-major with axis 0 fastest
-  @param[out] v     Quadrature-point values, Q_1d^dim entries, same convention
+  @param[in]  basis    The TensorBasis to apply (uses dim, P_1d, Q_1d, num_comp, interp_1d)
+  @param[in]  num_elem Number of elements batched together (default 1)
+  @param[in]  u        Nodal values -- see tensor-contract.hpp for the exact
+                       (component, node, element) layout
+  @param[out] v        Quadrature-point values, same layout convention
 
   @ref libCEED's CeedBasisApplyCore_Ref, CEED_EVAL_INTERP case
        (libCEED/backends/ref/ceed-ref-basis.c)
 **/
-void tensor_basis_apply_interp(const TensorBasis& basis, const std::vector<double>& u,
+void tensor_basis_apply_interp(const TensorBasis& basis, int num_elem, const std::vector<double>& u,
                                std::vector<double>& v) {
   int P = basis.P_1d, Q = basis.Q_1d, dim = basis.dim, num_comp = basis.num_comp;
-  int pre = num_comp * int_pow(P, dim - 1), post = 1;
+  int pre = num_comp * int_pow(P, dim - 1), post = num_elem;
   std::vector<double> tmp[2];
 
   for (int d = 0; d < dim; d++) {
@@ -83,23 +85,25 @@ void tensor_basis_apply_interp(const TensorBasis& basis, const std::vector<doubl
 }
 
 /**
-  @brief Gradient at quadrature points (num_comp=1, num_elem=1)
+  @brief Gradient at quadrature points
 
-  @param[in]  basis The TensorBasis to apply (uses dim, P_1d, Q_1d, interp_1d, grad_1d)
-  @param[in]  u     Nodal values, P_1d^dim entries, row-major with axis 0 fastest
-  @param[out] v     dim blocks of Q_1d^dim entries each; block d_axis is d/dx_{d_axis}
+  @param[in]  basis    The TensorBasis to apply (uses dim, P_1d, Q_1d, num_comp, interp_1d, grad_1d)
+  @param[in]  num_elem Number of elements batched together (default 1)
+  @param[in]  u        Nodal values -- see tensor-contract.hpp for the exact
+                       (component, node, element) layout
+  @param[out] v        dim blocks; within a block, layout matches tensor_basis_apply_interp
 
   @ref libCEED's CeedBasisApplyCore_Ref, CEED_EVAL_GRAD case
        (libCEED/backends/ref/ceed-ref-basis.c)
 **/
-void tensor_basis_apply_grad(const TensorBasis& basis, const std::vector<double>& u,
+void tensor_basis_apply_grad(const TensorBasis& basis, int num_elem, const std::vector<double>& u,
                              std::vector<double>& v) {
   int P = basis.P_1d, Q = basis.Q_1d, dim = basis.dim, num_comp = basis.num_comp;
   int Qdim = int_pow(Q, dim);
-  v.resize(dim * num_comp * Qdim);
+  v.resize(dim * num_comp * Qdim * num_elem);
 
   for (int d_axis = 0; d_axis < dim; ++d_axis) {
-    int pre = num_comp * int_pow(P, dim - 1), post = 1;
+    int pre = num_comp * int_pow(P, dim - 1), post = num_elem;
     std::vector<double> tmp[2], component;
     for (int d = 0; d < dim; ++d) {
       const auto& bb = (d == d_axis) ? basis.grad_1d : basis.interp_1d;
@@ -112,8 +116,8 @@ void tensor_basis_apply_grad(const TensorBasis& basis, const std::vector<double>
     // component now holds this axis's derivative, Qdim entries
     // copy into its slice of v, since tensor_contract_apply would otherwise
     // resize/overwrite all of v rather than just this block.
-    std::copy(component.begin(), component.end(), v.begin() + d_axis * num_comp * Qdim);
+    std::copy(component.begin(), component.end(), v.begin() + d_axis * num_comp * Qdim * num_elem);
   }
-} 
+}
 
 }// namespace fem

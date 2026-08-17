@@ -126,7 +126,7 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 1D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_interp(basis, u, v);
+  fem::tensor_basis_apply_interp(basis, 1, u, v);
 
   REQUIRE(v.size() == static_cast<size_t>(Q_1d));
   for (int j = 0; j < Q_1d; ++j) {
@@ -152,7 +152,7 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 1D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_grad(basis, u, v);
+  fem::tensor_basis_apply_grad(basis, 1, u, v);
 
   REQUIRE(v.size() == static_cast<size_t>(Q_1d));
   for (int j = 0; j < Q_1d; ++j) {
@@ -180,7 +180,7 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 2D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_interp(basis, u, v);
+  fem::tensor_basis_apply_interp(basis, 1, u, v);
 
   REQUIRE(v.size() == static_cast<size_t>(Q_1d * Q_1d));
   for (int jy = 0; jy < Q_1d; ++jy) {
@@ -212,7 +212,7 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 2D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_grad(basis, u, v);
+  fem::tensor_basis_apply_grad(basis, 1, u, v);
 
   const int Q2 = Q_1d * Q_1d;
   REQUIRE(v.size() == static_cast<size_t>(2 * Q2));
@@ -248,7 +248,7 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 3D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_interp(basis, u, v);
+  fem::tensor_basis_apply_interp(basis, 1, u, v);
 
   REQUIRE(v.size() == static_cast<size_t>(Q_1d * Q_1d * Q_1d));
   for (int jz = 0; jz < Q_1d; ++jz) {
@@ -286,7 +286,7 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 3D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_grad(basis, u, v);
+  fem::tensor_basis_apply_grad(basis, 1, u, v);
 
   const int Q3 = Q_1d * Q_1d * Q_1d;
   REQUIRE(v.size() == static_cast<size_t>(3 * Q3));
@@ -339,7 +339,7 @@ TEST_CASE("tensor_basis_apply_interp matches analytic functions in 3D, num_comp=
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_interp(basis, u, v);
+  fem::tensor_basis_apply_interp(basis, 1, u, v);
 
   const int Q3 = Q_1d * Q_1d * Q_1d;
   REQUIRE(v.size() == static_cast<size_t>(num_comp * Q3));
@@ -382,7 +382,7 @@ TEST_CASE("tensor_basis_apply_grad matches analytic gradients in 3D, num_comp=3"
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_grad(basis, u, v);
+  fem::tensor_basis_apply_grad(basis, 1, u, v);
 
   const int Q3 = Q_1d * Q_1d * Q_1d;
   REQUIRE(v.size() == static_cast<size_t>(3 * num_comp * Q3));
@@ -415,6 +415,101 @@ TEST_CASE("tensor_basis_apply_grad matches analytic gradients in 3D, num_comp=3"
         REQUIRE(v[(0 * num_comp + 2) * Q3 + q] == Approx(du3dx).margin(1e-11));
         REQUIRE(v[(1 * num_comp + 2) * Q3 + q] == Approx(du3dy).margin(1e-11));
         REQUIRE(v[(2 * num_comp + 2) * Q3 + q] == Approx(du3dz).margin(1e-11));
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------
+// num_elem=3 (element batching) in 2D, num_comp=1. Each element gets
+// its own bilinear function u_e(x,y) = a_e + b_e*x + c_e*y + d_e*x*y,
+// exactly representable by P_1d=2. u/v layout is interleaved by element
+// u[node * num_elem + elem].
+// ---------------------------------------------------------------------
+
+namespace {
+constexpr int kNumElem = 3;
+constexpr double kElemCoeffs[kNumElem][4] = {
+    {1.0, 2.0, -3.0, 0.5},
+    {-2.0, 0.7, 1.3, -1.1},
+    {0.0, -1.0, 2.0, 3.0},
+};
+}  // namespace
+
+TEST_CASE("tensor_basis_apply_interp batches independently over num_elem",
+          "[tensor-contract][num_elem]") {
+  const int P_1d = 2, Q_1d = 3;
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(2, 1, P_1d, Q_1d);
+  const double nodes1d[2] = {-1.0, 1.0};
+
+  std::vector<double> u(P_1d * P_1d * kNumElem);
+  for (int iy = 0; iy < P_1d; ++iy) {
+    for (int ix = 0; ix < P_1d; ++ix) {
+      int node = iy * P_1d + ix;
+      double x = nodes1d[ix], y = nodes1d[iy];
+      for (int e = 0; e < kNumElem; ++e) {
+        double a = kElemCoeffs[e][0], b = kElemCoeffs[e][1];
+        double c = kElemCoeffs[e][2], d = kElemCoeffs[e][3];
+        u[node * kNumElem + e] = a + b * x + c * y + d * x * y;
+      }
+    }
+  }
+
+  std::vector<double> v;
+  fem::tensor_basis_apply_interp(basis, kNumElem, u, v);
+
+  const int Qdim = Q_1d * Q_1d;
+  REQUIRE(v.size() == static_cast<size_t>(Qdim * kNumElem));
+  for (int jy = 0; jy < Q_1d; ++jy) {
+    for (int jx = 0; jx < Q_1d; ++jx) {
+      int q = jy * Q_1d + jx;
+      double x = basis.q_ref_1d[jx], y = basis.q_ref_1d[jy];
+      for (int e = 0; e < kNumElem; ++e) {
+        double a = kElemCoeffs[e][0], b = kElemCoeffs[e][1];
+        double c = kElemCoeffs[e][2], d = kElemCoeffs[e][3];
+        double expected = a + b * x + c * y + d * x * y;
+        REQUIRE(v[q * kNumElem + e] == Approx(expected).margin(1e-12));
+      }
+    }
+  }
+}
+
+TEST_CASE("tensor_basis_apply_grad batches independently over num_elem",
+          "[tensor-contract][num_elem]") {
+  const int P_1d = 2, Q_1d = 3;
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(2, 1, P_1d, Q_1d);
+  const double nodes1d[2] = {-1.0, 1.0};
+
+  std::vector<double> u(P_1d * P_1d * kNumElem);
+  for (int iy = 0; iy < P_1d; ++iy) {
+    for (int ix = 0; ix < P_1d; ++ix) {
+      int node = iy * P_1d + ix;
+      double x = nodes1d[ix], y = nodes1d[iy];
+      for (int e = 0; e < kNumElem; ++e) {
+        double a = kElemCoeffs[e][0], b = kElemCoeffs[e][1];
+        double c = kElemCoeffs[e][2], d = kElemCoeffs[e][3];
+        u[node * kNumElem + e] = a + b * x + c * y + d * x * y;
+      }
+    }
+  }
+
+  std::vector<double> v;
+  fem::tensor_basis_apply_grad(basis, kNumElem, u, v);
+
+  const int Qdim = Q_1d * Q_1d;
+  REQUIRE(v.size() == static_cast<size_t>(2 * Qdim * kNumElem));
+  for (int jy = 0; jy < Q_1d; ++jy) {
+    for (int jx = 0; jx < Q_1d; ++jx) {
+      int q = jy * Q_1d + jx;
+      double x = basis.q_ref_1d[jx], y = basis.q_ref_1d[jy];
+      for (int e = 0; e < kNumElem; ++e) {
+        double b = kElemCoeffs[e][1], c = kElemCoeffs[e][2], d = kElemCoeffs[e][3];
+        double expected_dudx = b + d * y;
+        double expected_dudy = c + d * x;
+        double got_dudx = v[(0 * Qdim + q) * kNumElem + e];
+        double got_dudy = v[(1 * Qdim + q) * kNumElem + e];
+        REQUIRE(got_dudx == Approx(expected_dudx).margin(1e-12));
+        REQUIRE(got_dudy == Approx(expected_dudy).margin(1e-12));
       }
     }
   }
