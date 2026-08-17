@@ -39,4 +39,14 @@ void tensor_basis_apply_grad(const TensorBasis& basis, int num_elem,
                              const std::vector<double>& u,
                              std::vector<double>& v);
 
+enum class EvalMode { Interp, Grad };
+
+// Single dispatching entry point over tensor_basis_apply_interp/_grad,
+// matching libCEED's CeedBasisApply(basis, num_elem, t_mode, eval_mode,
+// u, v) shape (minus t_mode/TRANSPOSE, which neither underlying
+// function supports yet)
+void tensor_basis_apply(const TensorBasis& basis, int num_elem, EvalMode eval_mode,
+                         const std::vector<double>& u, std::vector<double>& v);
+
+
 } // namespace fem

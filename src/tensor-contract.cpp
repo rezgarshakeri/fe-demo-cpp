@@ -120,4 +120,29 @@ void tensor_basis_apply_grad(const TensorBasis& basis, int num_elem, const std::
   }
 }
 
+/**
+  @brief Dispatch to tensor_basis_apply_interp or tensor_basis_apply_grad by eval_mode
+
+  @param[in]  basis     The TensorBasis to apply
+  @param[in]  num_elem  Number of elements batched together
+  @param[in]  eval_mode EvalMode::Interp or EvalMode::Grad
+  @param[in]  u         Nodal values
+  @param[out] v         Result
+
+  @ref libCEED's CeedBasisApply (interface/ceed-basis.c)
+**/
+void tensor_basis_apply(const TensorBasis& basis, int num_elem,EvalMode eval_mode,
+                         const std::vector<double>& u, std::vector<double>& v) {
+  switch (eval_mode) {
+    case EvalMode::Interp:
+      tensor_basis_apply_interp(basis, num_elem, u, v);
+      break;
+    case EvalMode::Grad:
+      tensor_basis_apply_grad(basis, num_elem, u, v);
+      break;
+    default:
+      throw std::invalid_argument("tensor_basis_apply: unknown eval_mode");
+  }
+}
+
 }// namespace fem
