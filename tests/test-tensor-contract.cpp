@@ -86,7 +86,7 @@ TEST_CASE("tensor_contract_apply: Transpose reuses the same data for the adjoint
 TEST_CASE("tensor_contract_apply matches a naive computation using real TensorBasis::interp_1d",
           "[tensor-contract][basis]") {
   const int P_1d = 3, Q_1d = 4;
-  fem::TensorBasis basis = fem::TensorBasis::create_tensor_H1_lagrange(1, P_1d, Q_1d);
+  fem::TensorBasis basis = fem::TensorBasis::create_tensor_H1_lagrange(1, 1, P_1d, Q_1d);
 
   const std::vector<double> u = {1.5, -2.0, 0.5}; // arbitrary nodal values
   std::vector<double> v;
@@ -114,7 +114,7 @@ TEST_CASE("tensor_contract_apply matches a naive computation using real TensorBa
 TEST_CASE("tensor_basis_apply_interp matches an analytic function in 1D",
           "[tensor-contract][manufactured]") {
   const int P_1d = 16, Q_1d = 16;
-  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(1, P_1d, Q_1d);
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(1, 1, P_1d, Q_1d);
 
   // u(x) = sin(x) + x^2, sampled at the Lobatto nodes.
   std::vector<double> u;
@@ -139,7 +139,7 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 1D",
 TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 1D",
           "[tensor-contract][manufactured]") {
   const int P_1d = 16, Q_1d = 16;
-  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(1, P_1d, Q_1d);
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(1, 1, P_1d, Q_1d);
 
   std::vector<double> nodes;
   fem::gauss_lobatto_points(P_1d, nodes);
@@ -165,7 +165,7 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 1D",
 TEST_CASE("tensor_basis_apply_interp matches an analytic function in 2D",
           "[tensor-contract][manufactured]") {
   const int P_1d = 16, Q_1d = 16;
-  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(2, P_1d, Q_1d);
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(2, 1, P_1d, Q_1d);
 
   std::vector<double> nodes;
   fem::gauss_lobatto_points(P_1d, nodes);
@@ -195,7 +195,7 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 2D",
 TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 2D",
           "[tensor-contract][manufactured]") {
   const int P_1d = 16, Q_1d = 16;
-  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(2, P_1d, Q_1d);
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(2, 1, P_1d, Q_1d);
 
   std::vector<double> nodes;
   fem::gauss_lobatto_points(P_1d, nodes);
@@ -231,7 +231,7 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 2D",
 TEST_CASE("tensor_basis_apply_interp matches an analytic function in 3D",
           "[tensor-contract][manufactured]") {
   const int P_1d = 16, Q_1d = 16;
-  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(3, P_1d, Q_1d);
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(3, 1, P_1d, Q_1d);
 
   std::vector<double> nodes;
   fem::gauss_lobatto_points(P_1d, nodes);
@@ -266,7 +266,7 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 3D",
 TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 3D",
           "[tensor-contract][manufactured]") {
   const int P_1d = 16, Q_1d = 16;
-  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(3, P_1d, Q_1d);
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(3, 1, P_1d, Q_1d);
 
   std::vector<double> nodes;
   fem::gauss_lobatto_points(P_1d, nodes);
@@ -301,6 +301,120 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 3D",
         REQUIRE(v[0 * Q3 + q] == Approx(dudx).margin(1e-11));
         REQUIRE(v[1 * Q3 + q] == Approx(dudy).margin(1e-11));
         REQUIRE(v[2 * Q3 + q] == Approx(dudz).margin(1e-11));
+      }
+    }
+  }
+}
+
+// ---------------------------------------------------------------------
+// num_comp=3 (3D displacement field u = (ux, uy, uz), matching the
+// eventual elasticity target) in 3D, mirroring the Julia eval2 pattern
+// but extended to a third component:
+//   u1(x,y,z) = sin(x) + cos(x*y) + x*y*z
+//   u2(x,y,z) = cos(y) + sin(y*z) + x*y - z
+//   u3(x,y,z) = sin(x*y*z) + x^2 - y*z
+// Components are concatenated (not interleaved): u[c * P_1d^3 + node].
+// ---------------------------------------------------------------------
+
+TEST_CASE("tensor_basis_apply_interp matches analytic functions in 3D, num_comp=3",
+          "[tensor-contract][manufactured][num_comp]") {
+  const int P_1d = 16, Q_1d = 16, num_comp = 3;
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(3, num_comp, P_1d, Q_1d);
+
+  std::vector<double> nodes;
+  fem::gauss_lobatto_points(P_1d, nodes);
+
+  const int P3 = P_1d * P_1d * P_1d;
+  std::vector<double> u(num_comp * P3);
+  for (int iz = 0; iz < P_1d; ++iz) {
+    for (int iy = 0; iy < P_1d; ++iy) {
+      for (int ix = 0; ix < P_1d; ++ix) {
+        double x = nodes[ix], y = nodes[iy], z = nodes[iz];
+        int node = (iz * P_1d + iy) * P_1d + ix;
+        u[0 * P3 + node] = std::sin(x) + std::cos(x * y) + x * y * z;
+        u[1 * P3 + node] = std::cos(y) + std::sin(y * z) + x * y - z;
+        u[2 * P3 + node] = std::sin(x * y * z) + x * x - y * z;
+      }
+    }
+  }
+
+  std::vector<double> v;
+  fem::tensor_basis_apply_interp(basis, u, v);
+
+  const int Q3 = Q_1d * Q_1d * Q_1d;
+  REQUIRE(v.size() == static_cast<size_t>(num_comp * Q3));
+  for (int jz = 0; jz < Q_1d; ++jz) {
+    for (int jy = 0; jy < Q_1d; ++jy) {
+      for (int jx = 0; jx < Q_1d; ++jx) {
+        double x = basis.q_ref_1d[jx], y = basis.q_ref_1d[jy], z = basis.q_ref_1d[jz];
+        double u1 = std::sin(x) + std::cos(x * y) + x * y * z;
+        double u2 = std::cos(y) + std::sin(y * z) + x * y - z;
+        double u3 = std::sin(x * y * z) + x * x - y * z;
+        int q = (jz * Q_1d + jy) * Q_1d + jx;
+        REQUIRE(v[0 * Q3 + q] == Approx(u1).margin(1e-11));
+        REQUIRE(v[1 * Q3 + q] == Approx(u2).margin(1e-11));
+        REQUIRE(v[2 * Q3 + q] == Approx(u3).margin(1e-11));
+      }
+    }
+  }
+}
+
+TEST_CASE("tensor_basis_apply_grad matches analytic gradients in 3D, num_comp=3",
+          "[tensor-contract][manufactured][num_comp]") {
+  const int P_1d = 16, Q_1d = 16, num_comp = 3;
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(3, num_comp, P_1d, Q_1d);
+
+  std::vector<double> nodes;
+  fem::gauss_lobatto_points(P_1d, nodes);
+
+  const int P3 = P_1d * P_1d * P_1d;
+  std::vector<double> u(num_comp * P3);
+  for (int iz = 0; iz < P_1d; ++iz) {
+    for (int iy = 0; iy < P_1d; ++iy) {
+      for (int ix = 0; ix < P_1d; ++ix) {
+        double x = nodes[ix], y = nodes[iy], z = nodes[iz];
+        int node = (iz * P_1d + iy) * P_1d + ix;
+        u[0 * P3 + node] = std::sin(x) + std::cos(x * y) + x * y * z;
+        u[1 * P3 + node] = std::cos(y) + std::sin(y * z) + x * y - z;
+        u[2 * P3 + node] = std::sin(x * y * z) + x * x - y * z;
+      }
+    }
+  }
+
+  std::vector<double> v;
+  fem::tensor_basis_apply_grad(basis, u, v);
+
+  const int Q3 = Q_1d * Q_1d * Q_1d;
+  REQUIRE(v.size() == static_cast<size_t>(3 * num_comp * Q3));
+  for (int jz = 0; jz < Q_1d; ++jz) {
+    for (int jy = 0; jy < Q_1d; ++jy) {
+      for (int jx = 0; jx < Q_1d; ++jx) {
+        double x = basis.q_ref_1d[jx], y = basis.q_ref_1d[jy], z = basis.q_ref_1d[jz];
+        int q = (jz * Q_1d + jy) * Q_1d + jx;
+
+        // u1 = sin(x) + cos(x*y) + x*y*z
+        double du1dx = std::cos(x) - y * std::sin(x * y) + y * z;
+        double du1dy = -x * std::sin(x * y) + x * z;
+        double du1dz = x * y;
+        // u2 = cos(y) + sin(y*z) + x*y - z
+        double du2dx = y;
+        double du2dy = -std::sin(y) + z * std::cos(y * z) + x;
+        double du2dz = y * std::cos(y * z) - 1.0;
+        // u3 = sin(x*y*z) + x^2 - y*z
+        double du3dx = y * z * std::cos(x * y * z) + 2.0 * x;
+        double du3dy = x * z * std::cos(x * y * z) - z;
+        double du3dz = x * y * std::cos(x * y * z) - y;
+
+        // v[(d_axis * num_comp + component) * Q3 + q]
+        REQUIRE(v[(0 * num_comp + 0) * Q3 + q] == Approx(du1dx).margin(1e-11));
+        REQUIRE(v[(1 * num_comp + 0) * Q3 + q] == Approx(du1dy).margin(1e-11));
+        REQUIRE(v[(2 * num_comp + 0) * Q3 + q] == Approx(du1dz).margin(1e-11));
+        REQUIRE(v[(0 * num_comp + 1) * Q3 + q] == Approx(du2dx).margin(1e-11));
+        REQUIRE(v[(1 * num_comp + 1) * Q3 + q] == Approx(du2dy).margin(1e-11));
+        REQUIRE(v[(2 * num_comp + 1) * Q3 + q] == Approx(du2dz).margin(1e-11));
+        REQUIRE(v[(0 * num_comp + 2) * Q3 + q] == Approx(du3dx).margin(1e-11));
+        REQUIRE(v[(1 * num_comp + 2) * Q3 + q] == Approx(du3dy).margin(1e-11));
+        REQUIRE(v[(2 * num_comp + 2) * Q3 + q] == Approx(du3dz).margin(1e-11));
       }
     }
   }

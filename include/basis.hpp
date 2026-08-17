@@ -27,6 +27,7 @@ enum class QuadMode { Gauss, GaussLobatto };
 // directly, and (via tensor contraction along each dimension) in 2D/3D
 struct TensorBasis {
   int dim;    // spatial dimension (1, 2, or 3)
+  int num_comp;
   int P_1d;   // nodes per dimension
   int Q_1d;   // quadrature points per dimension
 
@@ -35,7 +36,7 @@ struct TensorBasis {
   std::vector<double> interp_1d;    // size Q_1d * P_1d
   std::vector<double> grad_1d;      // size Q_1d * P_1d
 
-  static TensorBasis create_tensor_H1_lagrange(int dim, int P_1d, int Q_1d, QuadMode quad_mode = QuadMode::Gauss);
+  static TensorBasis create_tensor_H1_lagrange(int dim, int num_comp,int P_1d, int Q_1d, QuadMode quad_mode = QuadMode::Gauss);
 };
 
 } // namespace fem

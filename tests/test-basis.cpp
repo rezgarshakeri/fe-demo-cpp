@@ -177,10 +177,11 @@ TEST_CASE("Lagrange basis on two nodes matches the analytic linear shape functio
 
 TEST_CASE("TensorBasis linear 1D basis reproduces the analytic reference stiffness",
           "[basis][tensor]") {
-  const int dim = 1, P_1d = 2, Q_1d = 2;
-  fem::TensorBasis basis = fem::TensorBasis::create_tensor_H1_lagrange(dim, P_1d, Q_1d);
+  const int dim = 1, num_comp = 1, P_1d = 2, Q_1d = 2;
+  fem::TensorBasis basis = fem::TensorBasis::create_tensor_H1_lagrange(dim, num_comp, P_1d, Q_1d);
 
   REQUIRE(basis.dim == dim);
+  REQUIRE(basis.num_comp == num_comp);
   REQUIRE(basis.P_1d == P_1d);
   REQUIRE(basis.Q_1d == Q_1d);
   REQUIRE(basis.q_ref_1d.size() == static_cast<size_t>(Q_1d));

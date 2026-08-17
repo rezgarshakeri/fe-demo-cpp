@@ -189,6 +189,7 @@ void lagrange_basis_matrix(const std::vector<double>& nodes,
   @brief Construct a tensor-product H1 Lagrange TensorBasis
 
   @param[in] dim       Spatial dimension (1, 2, or 3)
+  @param[in] num_comp  Number of components (1, 2, or 3)
   @param[in] P_1d      Nodes per dimension (Gauss-Lobatto node placement), must be >= 2
   @param[in] Q_1d      Quadrature points per dimension, must be >= 1
   @param[in] quad_mode Quadrature rule for q_ref_1d/q_weight_1d: QuadMode::Gauss (default)
@@ -198,10 +199,13 @@ void lagrange_basis_matrix(const std::vector<double>& nodes,
 
   @throw std::invalid_argument if dim, P_1d, or Q_1d are out of range
 **/
-TensorBasis TensorBasis::create_tensor_H1_lagrange(int dim, int P_1d, int Q_1d,
+TensorBasis TensorBasis::create_tensor_H1_lagrange(int dim, int num_comp, int P_1d, int Q_1d,
                                                      QuadMode quad_mode) {
   if (dim < 1 || dim > 3) {
     throw std::invalid_argument("create_tensor_H1_lagrange: dim must be 1, 2, or 3");
+  }
+  if (num_comp < 1 || num_comp > 3) {
+    throw std::invalid_argument("create_tensor_H1_lagrange: num_comp must be 1, 2, or 3");
   }
   if (P_1d < 2) {
     throw std::invalid_argument("create_tensor_H1_lagrange: P_1d must be >= 2");
@@ -220,7 +224,7 @@ TensorBasis TensorBasis::create_tensor_H1_lagrange(int dim, int P_1d, int Q_1d,
     throw std::invalid_argument("create_tensor_H1_lagrange: unknown quad_mode");
   }
   lagrange_basis_matrix(nodes, q_ref_1d, interp_1d, grad_1d);
-  return TensorBasis{dim, P_1d, Q_1d, q_ref_1d, q_weight_1d, interp_1d, grad_1d};
+  return TensorBasis{dim, num_comp, P_1d, Q_1d, q_ref_1d, q_weight_1d, interp_1d, grad_1d};
 }
 
 } // namespace fem

@@ -70,8 +70,8 @@ void tensor_contract_apply(int A, int B, int C, int J,
 **/
 void tensor_basis_apply_interp(const TensorBasis& basis, const std::vector<double>& u,
                                std::vector<double>& v) {
-  int P = basis.P_1d, Q = basis.Q_1d, dim = basis.dim;
-  int pre = 1 * int_pow(P, dim - 1), post = 1;
+  int P = basis.P_1d, Q = basis.Q_1d, dim = basis.dim, num_comp = basis.num_comp;
+  int pre = num_comp * int_pow(P, dim - 1), post = 1;
   std::vector<double> tmp[2];
 
   for (int d = 0; d < dim; d++) {
@@ -94,12 +94,12 @@ void tensor_basis_apply_interp(const TensorBasis& basis, const std::vector<doubl
 **/
 void tensor_basis_apply_grad(const TensorBasis& basis, const std::vector<double>& u,
                              std::vector<double>& v) {
-  int P = basis.P_1d, Q = basis.Q_1d, dim = basis.dim;
+  int P = basis.P_1d, Q = basis.Q_1d, dim = basis.dim, num_comp = basis.num_comp;
   int Qdim = int_pow(Q, dim);
-  v.resize(dim * Qdim);
+  v.resize(dim * num_comp * Qdim);
 
   for (int d_axis = 0; d_axis < dim; ++d_axis) {
-    int pre = int_pow(P, dim - 1), post = 1;
+    int pre = num_comp * int_pow(P, dim - 1), post = 1;
     std::vector<double> tmp[2], component;
     for (int d = 0; d < dim; ++d) {
       const auto& bb = (d == d_axis) ? basis.grad_1d : basis.interp_1d;
@@ -112,7 +112,7 @@ void tensor_basis_apply_grad(const TensorBasis& basis, const std::vector<double>
     // component now holds this axis's derivative, Qdim entries
     // copy into its slice of v, since tensor_contract_apply would otherwise
     // resize/overwrite all of v rather than just this block.
-    std::copy(component.begin(), component.end(), v.begin() + d_axis * Qdim);
+    std::copy(component.begin(), component.end(), v.begin() + d_axis * num_comp * Qdim);
   }
 } 
 
