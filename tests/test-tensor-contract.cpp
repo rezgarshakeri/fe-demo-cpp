@@ -1,6 +1,7 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
+#include <cstdlib>
 #include "basis.hpp"
 #include "tensor-contract.hpp"
 
@@ -126,7 +127,7 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 1D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_interp(basis, 1, u, v);
+  fem::tensor_basis_apply_interp(basis, 1, fem::ContractMode::NoTranspose, u, v);
 
   REQUIRE(v.size() == static_cast<size_t>(Q_1d));
   for (int j = 0; j < Q_1d; ++j) {
@@ -152,7 +153,7 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 1D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_grad(basis, 1, u, v);
+  fem::tensor_basis_apply_grad(basis, 1, fem::ContractMode::NoTranspose, u, v);
 
   REQUIRE(v.size() == static_cast<size_t>(Q_1d));
   for (int j = 0; j < Q_1d; ++j) {
@@ -180,7 +181,7 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 2D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_interp(basis, 1, u, v);
+  fem::tensor_basis_apply_interp(basis, 1, fem::ContractMode::NoTranspose, u, v);
 
   REQUIRE(v.size() == static_cast<size_t>(Q_1d * Q_1d));
   for (int jy = 0; jy < Q_1d; ++jy) {
@@ -212,7 +213,7 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 2D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_grad(basis, 1, u, v);
+  fem::tensor_basis_apply_grad(basis, 1, fem::ContractMode::NoTranspose, u, v);
 
   const int Q2 = Q_1d * Q_1d;
   REQUIRE(v.size() == static_cast<size_t>(2 * Q2));
@@ -248,7 +249,7 @@ TEST_CASE("tensor_basis_apply_interp matches an analytic function in 3D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_interp(basis, 1, u, v);
+  fem::tensor_basis_apply_interp(basis, 1, fem::ContractMode::NoTranspose, u, v);
 
   REQUIRE(v.size() == static_cast<size_t>(Q_1d * Q_1d * Q_1d));
   for (int jz = 0; jz < Q_1d; ++jz) {
@@ -286,7 +287,7 @@ TEST_CASE("tensor_basis_apply_grad matches an analytic gradient in 3D",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_grad(basis, 1, u, v);
+  fem::tensor_basis_apply_grad(basis, 1, fem::ContractMode::NoTranspose, u, v);
 
   const int Q3 = Q_1d * Q_1d * Q_1d;
   REQUIRE(v.size() == static_cast<size_t>(3 * Q3));
@@ -339,7 +340,7 @@ TEST_CASE("tensor_basis_apply_interp matches analytic functions in 3D, num_comp=
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_interp(basis, 1, u, v);
+  fem::tensor_basis_apply_interp(basis, 1, fem::ContractMode::NoTranspose, u, v);
 
   const int Q3 = Q_1d * Q_1d * Q_1d;
   REQUIRE(v.size() == static_cast<size_t>(num_comp * Q3));
@@ -382,7 +383,7 @@ TEST_CASE("tensor_basis_apply_grad matches analytic gradients in 3D, num_comp=3"
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_grad(basis, 1, u, v);
+  fem::tensor_basis_apply_grad(basis, 1, fem::ContractMode::NoTranspose, u, v);
 
   const int Q3 = Q_1d * Q_1d * Q_1d;
   REQUIRE(v.size() == static_cast<size_t>(3 * num_comp * Q3));
@@ -456,7 +457,7 @@ TEST_CASE("tensor_basis_apply_interp batches independently over num_elem",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_interp(basis, kNumElem, u, v);
+  fem::tensor_basis_apply_interp(basis, kNumElem, fem::ContractMode::NoTranspose, u, v);
 
   const int Qdim = Q_1d * Q_1d;
   REQUIRE(v.size() == static_cast<size_t>(Qdim * kNumElem));
@@ -494,7 +495,7 @@ TEST_CASE("tensor_basis_apply_grad batches independently over num_elem",
   }
 
   std::vector<double> v;
-  fem::tensor_basis_apply_grad(basis, kNumElem, u, v);
+  fem::tensor_basis_apply_grad(basis, kNumElem, fem::ContractMode::NoTranspose, u, v);
 
   const int Qdim = Q_1d * Q_1d;
   REQUIRE(v.size() == static_cast<size_t>(2 * Qdim * kNumElem));
@@ -513,4 +514,61 @@ TEST_CASE("tensor_basis_apply_grad batches independently over num_elem",
       }
     }
   }
+}
+
+// ---------------------------------------------------------------------
+// ContractMode::Transpose adjoint checks: <Bu, w> == <u, B^T w> (interp)
+// and <Gu, w> == <u, G^T w> (grad), for random u, w. This is a strong,
+// dimension-agnostic way to verify the transpose direction -- it must
+// hold for ANY u, w if Transpose really is the mathematical adjoint of
+// NoTranspose, regardless of dim/num_comp/num_elem/basis size.
+// ---------------------------------------------------------------------
+
+namespace {
+double dot(const std::vector<double>& a, const std::vector<double>& b) {
+  double s = 0.0;
+  for (size_t i = 0; i < a.size(); ++i) s += a[i] * b[i];
+  return s;
+}
+
+std::vector<double> random_vec(size_t n, unsigned seed) {
+  std::vector<double> v(n);
+  std::srand(seed);
+  for (auto& x : v) x = static_cast<double>(std::rand()) / RAND_MAX - 0.5;
+  return v;
+}
+}  // namespace
+
+TEST_CASE("tensor_basis_apply_interp: Transpose is the adjoint of NoTranspose",
+          "[tensor-contract][transpose]") {
+  const int dim = 3, num_comp = 3, num_elem = 2, P_1d = 3, Q_1d = 5;
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(dim, num_comp, P_1d, Q_1d);
+
+  const int P3 = P_1d * P_1d * P_1d, Q3 = Q_1d * Q_1d * Q_1d;
+  auto u = random_vec(num_comp * P3 * num_elem, 33);
+  auto w = random_vec(num_comp * Q3 * num_elem, 44);
+
+  std::vector<double> Bu, BTw;
+  fem::tensor_basis_apply_interp(basis, num_elem, fem::ContractMode::NoTranspose, u, Bu);
+  fem::tensor_basis_apply_interp(basis, num_elem, fem::ContractMode::Transpose, w, BTw);
+
+  REQUIRE(BTw.size() == u.size());
+  REQUIRE(dot(Bu, w) == Approx(dot(u, BTw)).margin(1e-10));
+}
+
+TEST_CASE("tensor_basis_apply_grad: Transpose is the adjoint of NoTranspose",
+          "[tensor-contract][transpose]") {
+  const int dim = 3, num_comp = 3, num_elem = 2, P_1d = 3, Q_1d = 5;
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(dim, num_comp, P_1d, Q_1d);
+
+  const int P3 = P_1d * P_1d * P_1d, Q3 = Q_1d * Q_1d * Q_1d;
+  auto u = random_vec(num_comp * P3 * num_elem, 11);
+  auto w = random_vec(dim * num_comp * Q3 * num_elem, 22);
+
+  std::vector<double> Gu, GTw;
+  fem::tensor_basis_apply_grad(basis, num_elem, fem::ContractMode::NoTranspose, u, Gu);
+  fem::tensor_basis_apply_grad(basis, num_elem, fem::ContractMode::Transpose, w, GTw);
+
+  REQUIRE(GTw.size() == u.size());
+  REQUIRE(dot(Gu, w) == Approx(dot(u, GTw)).margin(1e-10));
 }

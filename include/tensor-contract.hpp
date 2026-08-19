@@ -8,7 +8,7 @@ enum class ContractMode { NoTranspose, Transpose };
 
 void tensor_contract_apply(int A, int B, int C, int J,
                             const std::vector<double>& t,
-                            ContractMode mode, bool add,
+                            ContractMode t_mode, bool add,
                             const std::vector<double>& u,
                             std::vector<double>& v);
 
@@ -23,7 +23,7 @@ void tensor_contract_apply(int A, int B, int C, int J,
 //   u[ix] (dim=1) -- P_1d^dim entries total.
 // v follows the same convention with Q_1d in place of P_1d, Q_1d^dim
 // entries total.
-void tensor_basis_apply_interp(const TensorBasis& basis, int num_elem,
+void tensor_basis_apply_interp(const TensorBasis& basis, int num_elem, ContractMode t_mode,
                                const std::vector<double>& u,
                                std::vector<double>& v);
 
@@ -35,7 +35,7 @@ void tensor_basis_apply_interp(const TensorBasis& basis, int num_elem,
 // basis.interp_1d on every other axis (dim tensor_contract_apply calls
 // per block, dim*dim calls total) -- see CEED_EVAL_GRAD in the same
 // libCEED reference above.
-void tensor_basis_apply_grad(const TensorBasis& basis, int num_elem,
+void tensor_basis_apply_grad(const TensorBasis& basis, int num_elem, ContractMode t_mode,
                              const std::vector<double>& u,
                              std::vector<double>& v);
 
@@ -45,7 +45,7 @@ enum class EvalMode { Interp, Grad };
 // matching libCEED's CeedBasisApply(basis, num_elem, t_mode, eval_mode,
 // u, v) shape (minus t_mode/TRANSPOSE, which neither underlying
 // function supports yet)
-void tensor_basis_apply(const TensorBasis& basis, int num_elem, EvalMode eval_mode,
+void tensor_basis_apply(const TensorBasis& basis, int num_elem, ContractMode t_mode, EvalMode eval_mode,
                          const std::vector<double>& u, std::vector<double>& v);
 
 
