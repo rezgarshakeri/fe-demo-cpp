@@ -46,15 +46,15 @@ void elem_restriction_apply(const ElemRestriction& restriction, ContractMode t_m
         }
       }
     }
-  }
-
-  if (t_mode == ContractMode::Transpose) {
+  } else {
     out.resize(l_size);   // not zeroed -- caller's responsibility, same as before
-    for (int e = 0; e < num_elem; e++)
-      for (int k = 0; k < num_comp; k++)
+    for (int e = 0; e < num_elem; e++) {
+      for (int k = 0; k < num_comp; k++) {
         for (int i = 0; i < elem_size; i++) {
           out[restriction.offsets[i + e * elem_size] + k * comp_stride] += in[(k * elem_size + i) * num_elem + e];
         }
+      }
+    }
   }
 }
 

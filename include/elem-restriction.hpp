@@ -1,8 +1,6 @@
 #pragma once
 #include <vector>
-#include "tensor-contract.hpp"  // reuses ContractMode as t_mode, same as libCEED
-                                // reuses one CeedTransposeMode across CeedBasisApply,
-                                // CeedTensorContractApply, and CeedElemRestrictionApply.
+#include "transpose-mode.hpp"  // ContractMode, as t_mode below
 
 namespace fem {
 
