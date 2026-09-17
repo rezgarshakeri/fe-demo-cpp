@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <stdexcept>
 #include "elem-restriction.hpp"
 
 using Catch::Approx;
@@ -12,12 +13,7 @@ using Catch::Approx;
 
 static fem::ElemRestriction make_shared_node_restriction() {
   fem::ElemRestriction r;
-  r.num_elem = 2;
-  r.elem_size = 2;
-  r.num_comp = 1;
-  r.comp_stride = 1;
-  r.l_size = 3;
-  r.offsets = {0, 1, 1, 2};
+  fem::elem_restriction_create(2, 2, 1, 1, 3, {0, 1, 1, 2}, r);
   return r;
 }
 
@@ -75,12 +71,8 @@ TEST_CASE("elem_restriction_apply: Transpose accumulates onto existing values, d
 TEST_CASE("elem_restriction_apply: E-vector layout is component-outer, element-inner",
           "[elem-restriction]") {
   fem::ElemRestriction r;
-  r.num_elem = 2;
-  r.elem_size = 2;
-  r.num_comp = 2;
-  r.comp_stride = 100;
-  r.l_size = 200;
-  r.offsets = {0, 1, 2, 3};  // element 0 -> global [0,1], element 1 -> global [2,3]
+  // element 0 -> global [0,1], element 1 -> global [2,3]
+  fem::elem_restriction_create(2, 2, 2, 100, 200, {0, 1, 2, 3}, r);
 
   std::vector<double> L(r.l_size);
   for (size_t i = 0; i < L.size(); ++i) L[i] = static_cast<double>(i);  // L[g] = g
@@ -98,12 +90,7 @@ TEST_CASE("elem_restriction_apply: E-vector layout is component-outer, element-i
 TEST_CASE("elem_restriction_apply: gather then scatter-add round-trips correctly with num_comp",
           "[elem-restriction]") {
   fem::ElemRestriction r;
-  r.num_elem = 2;
-  r.elem_size = 2;
-  r.num_comp = 2;
-  r.comp_stride = 100;
-  r.l_size = 200;
-  r.offsets = {0, 1, 2, 3};
+  fem::elem_restriction_create(2, 2, 2, 100, 200, {0, 1, 2, 3}, r);
 
   std::vector<double> L(r.l_size, 0.0);
   L[0] = 5; L[1] = 6; L[2] = 7; L[3] = 8;
@@ -125,4 +112,116 @@ TEST_CASE("elem_restriction_apply: gather then scatter-add round-trips correctly
   REQUIRE(L_out[101] == Approx(60.0));
   REQUIRE(L_out[102] == Approx(70.0));
   REQUIRE(L_out[103] == Approx(80.0));
+}
+
+// ---------------------------------------------------------------------
+// elem_restriction_create: validation. Every argument that would make
+// apply read/write out of bounds (or make no sense) must throw.
+// ---------------------------------------------------------------------
+
+TEST_CASE("elem_restriction_create: fills in every field, including e_size", "[elem-restriction][create]") {
+  fem::ElemRestriction r;
+  fem::elem_restriction_create(2, 2, 3, 10, 30, {0, 1, 1, 2}, r);
+
+  REQUIRE(r.num_elem == 2);
+  REQUIRE(r.elem_size == 2);
+  REQUIRE(r.num_comp == 3);
+  REQUIRE(r.comp_stride == 10);
+  REQUIRE(r.l_size == 30);
+  REQUIRE(r.e_size == 3 * 2 * 2);  // num_comp * elem_size * num_elem
+  REQUIRE(r.offsets == std::vector<int>{0, 1, 1, 2});
+}
+
+TEST_CASE("elem_restriction_create: rejects invalid sizes", "[elem-restriction][create]") {
+  fem::ElemRestriction r;
+  const std::vector<int> ok = {0, 1, 1, 2};
+
+  REQUIRE_THROWS_AS(fem::elem_restriction_create(0, 2, 1, 1, 3, {}, r), std::invalid_argument);   // num_elem
+  REQUIRE_THROWS_AS(fem::elem_restriction_create(2, 0, 1, 1, 3, {}, r), std::invalid_argument);   // elem_size
+  REQUIRE_THROWS_AS(fem::elem_restriction_create(2, 2, 0, 1, 3, ok, r), std::invalid_argument);   // num_comp
+  REQUIRE_THROWS_AS(fem::elem_restriction_create(2, 2, 1, 1, 0, ok, r), std::invalid_argument);   // l_size
+  REQUIRE_THROWS_AS(fem::elem_restriction_create(2, 2, 2, 0, 200, ok, r), std::invalid_argument); // comp_stride with num_comp>1
+}
+
+TEST_CASE("elem_restriction_create: comp_stride is irrelevant when num_comp == 1", "[elem-restriction][create]") {
+  fem::ElemRestriction r;
+  REQUIRE_NOTHROW(fem::elem_restriction_create(2, 2, 1, 0, 3, {0, 1, 1, 2}, r));
+}
+
+TEST_CASE("elem_restriction_create: rejects a wrong-sized offsets array", "[elem-restriction][create]") {
+  fem::ElemRestriction r;
+  REQUIRE_THROWS_AS(fem::elem_restriction_create(2, 2, 1, 1, 3, {0, 1, 1}, r), std::invalid_argument);
+  REQUIRE_THROWS_AS(fem::elem_restriction_create(2, 2, 1, 1, 3, {0, 1, 1, 2, 2}, r), std::invalid_argument);
+}
+
+TEST_CASE("elem_restriction_create: rejects out-of-range offsets", "[elem-restriction][create]") {
+  fem::ElemRestriction r;
+  REQUIRE_THROWS_AS(fem::elem_restriction_create(2, 2, 1, 1, 3, {0, 1, 1, 3}, r), std::invalid_argument);   // == l_size
+  REQUIRE_THROWS_AS(fem::elem_restriction_create(2, 2, 1, 1, 3, {0, -1, 1, 2}, r), std::invalid_argument);  // negative
+}
+
+TEST_CASE("elem_restriction_create: rejects a comp_stride that pushes later components out of range",
+          "[elem-restriction][create]") {
+  fem::ElemRestriction r;
+  // offsets themselves are in [0, 3), but component 1 would read offset + 100 >= l_size
+  REQUIRE_THROWS_AS(fem::elem_restriction_create(1, 2, 2, 100, 3, {0, 1}, r), std::invalid_argument);
+  // exactly fitting is fine: max offset 1 + (2-1)*2 = 3 < 4
+  REQUIRE_NOTHROW(fem::elem_restriction_create(1, 2, 2, 2, 4, {0, 1}, r));
+  // one too small: 1 + 2 = 3 >= 3
+  REQUIRE_THROWS_AS(fem::elem_restriction_create(1, 2, 2, 2, 3, {0, 1}, r), std::invalid_argument);
+}
+
+// ---------------------------------------------------------------------
+// elem_restriction_get_multiplicity = E^T (E 1): how many elements touch
+// each L-vector entry. Ported from libCEED's t209-elemrestriction.c.
+// ---------------------------------------------------------------------
+
+TEST_CASE("elem_restriction_get_multiplicity matches libCEED t209", "[elem-restriction][multiplicity]") {
+  // 3 elements x 4 nodes, consecutive elements share one node: nodes 3 and 6 are shared.
+  const int num_elem = 3;
+  std::vector<int> offsets;
+  for (int e = 0; e < num_elem; ++e)
+    for (int j = 0; j < 4; ++j) offsets.push_back(e * 3 + j);
+
+  fem::ElemRestriction r;
+  fem::elem_restriction_create(num_elem, 4, 1, 1, 3 * num_elem + 1, offsets, r);
+
+  std::vector<double> mult;  // deliberately empty: output parameter, must be sized by the function
+  fem::elem_restriction_get_multiplicity(r, mult);
+
+  REQUIRE(mult.size() == static_cast<size_t>(3 * num_elem + 1));
+  for (int i = 0; i < 3 * num_elem + 1; ++i) {
+    const bool shared = i > 0 && i < 3 * num_elem && i % 3 == 0;
+    REQUIRE(mult[i] == Approx(shared ? 2.0 : 1.0));
+  }
+}
+
+TEST_CASE("elem_restriction_get_multiplicity overwrites stale contents of mult", "[elem-restriction][multiplicity]") {
+  fem::ElemRestriction r;
+  fem::elem_restriction_create(2, 2, 1, 1, 3, {0, 1, 1, 2}, r);
+
+  std::vector<double> mult = {99.0, 99.0, 99.0, 99.0, 99.0};  // wrong size and garbage values
+  fem::elem_restriction_get_multiplicity(r, mult);
+
+  REQUIRE(mult.size() == 3);
+  REQUIRE(mult[0] == Approx(1.0));
+  REQUIRE(mult[1] == Approx(2.0));  // the shared node
+  REQUIRE(mult[2] == Approx(1.0));
+}
+
+TEST_CASE("elem_restriction_get_multiplicity counts per component and leaves untouched entries at 0",
+          "[elem-restriction][multiplicity]") {
+  // num_comp=2, comp_stride=5, l_size=12: L entries 0..3 (comp 0) and 5..8 (comp 1) are used,
+  // entries 4 and 9..11 belong to no element.
+  fem::ElemRestriction r;
+  fem::elem_restriction_create(2, 2, 2, 5, 12, {0, 1, 1, 2}, r);
+
+  std::vector<double> mult;
+  fem::elem_restriction_get_multiplicity(r, mult);
+
+  const std::vector<double> expected = {1, 2, 1, 0, 0,   // component 0: node 1 shared
+                                        1, 2, 1, 0, 0,   // component 1: same pattern
+                                        0, 0};           // outside every element
+  REQUIRE(mult.size() == expected.size());
+  for (size_t i = 0; i < expected.size(); ++i) REQUIRE(mult[i] == Approx(expected[i]));
 }
