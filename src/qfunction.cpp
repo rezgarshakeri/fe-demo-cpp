@@ -77,10 +77,9 @@ void qfunction_apply(QFunction& qf, int Q, const std::vector<std::vector<double>
       throw std::invalid_argument("qfunction_apply: input field " + qf.inputs[f].name + " has incorrect size");
     }
   }
+  out.resize(qf.outputs.size());
   for (size_t f = 0; f < out.size(); ++f) {
-    if (out[f].size() != static_cast<size_t>(qf.outputs[f].size * Q)) {
-      throw std::invalid_argument("qfunction_apply: output field " + qf.outputs[f].name + " has incorrect size");
-    }
+    out[f].resize(static_cast<size_t>(qf.outputs[f].size) * Q);
   }
   std::vector<const double*> in_ptrs(in.size());
   std::vector<double*> out_ptrs(out.size());

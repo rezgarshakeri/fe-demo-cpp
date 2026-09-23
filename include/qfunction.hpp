@@ -17,7 +17,7 @@ namespace fem {
 // A plain function pointer (not std::function / a capturing lambda) on
 // purpose: libCEED compiles the same QFunction source for CPU and GPU, and a
 // function with all its state in ctx is what can be ported to a CUDA kernel.
-using QFunctionUser = int (*)(void *ctx, const int Q, const double *const *in, double *const *out);
+using QFunctionUser = int (*)(void* ctx, int Q, const double* const* in, double* const* out);
 
 struct QFunctionField {
   std::string name;
@@ -34,7 +34,7 @@ struct QFunction {
 };
 
 void qfunction_create(QFunctionUser user, QFunction& qf);
-void qfunction_add_input(QFunction& qf, const std::string& name, EvalMode eval_mode);
+void qfunction_add_input(QFunction& qf, const std::string& name, int size, EvalMode eval_mode);
 void qfunction_add_output(QFunction& qf, const std::string& name, int size, EvalMode eval_mode);
 
 template <class T>
