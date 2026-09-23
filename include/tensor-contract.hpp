@@ -1,6 +1,7 @@
 #pragma once
 #include <vector>
 #include "basis.hpp"
+#include "eval-mode.hpp"
 #include "transpose-mode.hpp"
 
 namespace fem {
@@ -44,8 +45,6 @@ void tensor_basis_apply_grad(const TensorBasis& basis, int num_elem, ContractMod
 // NoTranspose only; Transpose throws.
 void tensor_basis_apply_weight(const TensorBasis& basis, int num_elem, ContractMode t_mode,
                                std::vector<double>& v);
-
-enum class EvalMode { Interp, Grad, Weight };
 
 // Single dispatching entry point over tensor_basis_apply_interp/_grad/_weight,
 // matching libCEED's CeedBasisApply(basis, num_elem, t_mode, eval_mode, u, v).
