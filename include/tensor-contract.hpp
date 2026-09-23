@@ -38,12 +38,18 @@ void tensor_basis_apply_grad(const TensorBasis& basis, int num_elem, ContractMod
                              const std::vector<double>& u,
                              std::vector<double>& v);
 
-enum class EvalMode { Interp, Grad };
+// Tensor-product quadrature weights, w[q] = prod_d q_weight_1d[q_d], copied
+// to every element: v has Q_1d^dim * num_elem entries, v[q * num_elem + e]
+// (same Q-vector layout as tensor_basis_apply_interp, one component).
+// NoTranspose only; Transpose throws.
+void tensor_basis_apply_weight(const TensorBasis& basis, int num_elem, ContractMode t_mode,
+                               std::vector<double>& v);
 
-// Single dispatching entry point over tensor_basis_apply_interp/_grad,
-// matching libCEED's CeedBasisApply(basis, num_elem, t_mode, eval_mode,
-// u, v) shape (minus t_mode/TRANSPOSE, which neither underlying
-// function supports yet)
+enum class EvalMode { Interp, Grad, Weight };
+
+// Single dispatching entry point over tensor_basis_apply_interp/_grad/_weight,
+// matching libCEED's CeedBasisApply(basis, num_elem, t_mode, eval_mode, u, v).
+// u is ignored for EvalMode::Weight.
 void tensor_basis_apply(const TensorBasis& basis, int num_elem, ContractMode t_mode, EvalMode eval_mode,
                          const std::vector<double>& u, std::vector<double>& v);
 

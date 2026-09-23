@@ -156,12 +156,50 @@ void tensor_basis_apply_grad(const TensorBasis& basis, int num_elem, ContractMod
 }
 
 /**
-  @brief Dispatch to tensor_basis_apply_interp or tensor_basis_apply_grad by eval_mode
+  @brief Compute tensor-product quadrature weights
+
+  @param[in]  basis    The TensorBasis to apply (uses dim, Q_1d, q_weight_1d)
+  @param[in]  num_elem Number of elements batched together
+  @param[in]  t_mode   Must be ContractMode::NoTranspose
+  @param[out] v        Resized to Q_1d^dim * num_elem; v[q * num_elem + e] = prod_d q_weight_1d[q_d]
+
+  @ref libCEED's CeedBasisApplyCore_Ref, CEED_EVAL_WEIGHT case
+       (libCEED/backends/ref/ceed-ref-basis.c)
+**/
+void tensor_basis_apply_weight(const TensorBasis& basis, int num_elem, ContractMode t_mode,
+                               std::vector<double>& v) {
+  int dim = basis.dim;
+  int Q = basis.Q_1d;
+
+  if (t_mode == ContractMode::Transpose) {
+    throw std::invalid_argument("EvalMode::Weight is incompatible with ContractMode::Transpose");
+  }
+
+  v.resize(num_elem * int_pow(Q, dim));
+
+  for (int d = 0; d < dim; d++) {
+    int pre = int_pow(Q, dim - d - 1), post = int_pow(Q, d);
+
+    for (int i = 0; i < pre; i++) {
+      for (int j = 0; j < Q; j++) {
+        for (int k = 0; k < post; k++) {
+          const double w = basis.q_weight_1d[j] * (d == 0 ? 1 : v[((i * Q + j) * post + k) * num_elem]);
+          for (int e = 0; e < num_elem; e++) v[((i * Q + j) * post + k) * num_elem + e] = w;
+        }
+      }
+    }
+  }
+}
+
+/**
+  @brief Dispatch to tensor_basis_apply_interp, _grad or _weight by eval_mode
 
   @param[in]  basis     The TensorBasis to apply
   @param[in]  num_elem  Number of elements batched together
-  @param[in]  eval_mode EvalMode::Interp or EvalMode::Grad
-  @param[in]  u         Nodal values
+  @param[in]  eval_mode EvalMode::Interp or EvalMode::Grad or EvalMode::Weight
+  @param[in]  t_mode    ContractMode::NoTranspose or ContractMode::Transpose
+  @param[in]  u         Input (nodal values, or quadrature-point values for Transpose);
+                        ignored for EvalMode::Weight
   @param[out] v         Result
 
   @ref libCEED's CeedBasisApply (interface/ceed-basis.c)
@@ -174,6 +212,9 @@ void tensor_basis_apply(const TensorBasis& basis, int num_elem, ContractMode t_m
       break;
     case EvalMode::Grad:
       tensor_basis_apply_grad(basis, num_elem, t_mode, u, v);
+      break;
+    case EvalMode::Weight:
+      tensor_basis_apply_weight(basis, num_elem, t_mode, v);
       break;
     default:
       throw std::invalid_argument("tensor_basis_apply: unknown eval_mode");

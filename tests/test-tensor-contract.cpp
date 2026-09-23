@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <cmath>
 #include <cstdlib>
+#include <stdexcept>
 #include "basis.hpp"
 #include "tensor-contract.hpp"
 
@@ -571,4 +572,76 @@ TEST_CASE("tensor_basis_apply_grad: Transpose is the adjoint of NoTranspose",
 
   REQUIRE(GTw.size() == u.size());
   REQUIRE(dot(Gu, w) == Approx(dot(u, GTw)).margin(1e-10));
+}
+
+TEST_CASE("tensor_basis_apply_weight",
+          "[tensor-contract][weight]") {
+
+  const int dim = 3, num_comp = 3, num_elem = 2, P_1d = 3, Q_1d = 5;
+  for (int d = 1; d <= dim; ++d) {
+    auto basis = fem::TensorBasis::create_tensor_H1_lagrange(d, num_comp, P_1d, Q_1d);
+
+    std::vector<double> v;
+    fem::tensor_basis_apply_weight(basis, num_elem, fem::ContractMode::NoTranspose, v);
+
+    double sum_w = 0.0;
+    for (double w : v) {
+      sum_w += w;
+    }
+    REQUIRE(sum_w == Approx(num_elem * std::pow(2.0, d)).margin(1e-12));
+  }
+}
+
+TEST_CASE("tensor_basis_apply_weight: each entry is the product of 1D weights, axis 0 fastest, elements innermost",
+          "[tensor-contract][weight]") {
+  const int dim = 3, P_1d = 3, Q = 4, num_elem = 2;
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(dim, 1, P_1d, Q);
+
+  std::vector<double> v;
+  fem::tensor_basis_apply_weight(basis, num_elem, fem::ContractMode::NoTranspose, v);
+
+  REQUIRE(v.size() == static_cast<size_t>(Q * Q * Q * num_elem));
+  const auto& w = basis.q_weight_1d;
+  for (int qz = 0; qz < Q; ++qz)
+    for (int qy = 0; qy < Q; ++qy)
+      for (int qx = 0; qx < Q; ++qx) {
+        const int q = (qz * Q + qy) * Q + qx;
+        for (int e = 0; e < num_elem; ++e) {
+          REQUIRE(v[q * num_elem + e] == Approx(w[qx] * w[qy] * w[qz]).margin(1e-14));
+        }
+      }
+}
+
+TEST_CASE("tensor_basis_apply_weight: weights line up with q_ref_1d (integrates a polynomial exactly)",
+          "[tensor-contract][weight]") {
+  // Integral over [-1,1]^3 of x^2 y^4 (1+z) = (2/3)(2/5)(2). Q=4 Gauss is exact to degree 7 per axis.
+  const int dim = 3, P_1d = 3, Q = 4;
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(dim, 1, P_1d, Q);
+
+  std::vector<double> v;
+  fem::tensor_basis_apply_weight(basis, 1, fem::ContractMode::NoTranspose, v);
+
+  const auto& x = basis.q_ref_1d;
+  double integral = 0.0;
+  for (int qz = 0; qz < Q; ++qz)
+    for (int qy = 0; qy < Q; ++qy)
+      for (int qx = 0; qx < Q; ++qx) {
+        const int q = (qz * Q + qy) * Q + qx;
+        integral += v[q] * x[qx] * x[qx] * std::pow(x[qy], 4) * (1.0 + x[qz]);
+      }
+  REQUIRE(integral == Approx((2.0 / 3.0) * (2.0 / 5.0) * 2.0).margin(1e-13));
+}
+
+TEST_CASE("tensor_basis_apply: EvalMode::Weight dispatches, and rejects Transpose", "[tensor-contract][weight]") {
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(2, 1, 3, 4);
+  const std::vector<double> unused;
+
+  std::vector<double> direct, dispatched;
+  fem::tensor_basis_apply_weight(basis, 3, fem::ContractMode::NoTranspose, direct);
+  fem::tensor_basis_apply(basis, 3, fem::ContractMode::NoTranspose, fem::EvalMode::Weight, unused, dispatched);
+  REQUIRE(dispatched == direct);
+
+  REQUIRE_THROWS_AS(
+      fem::tensor_basis_apply(basis, 3, fem::ContractMode::Transpose, fem::EvalMode::Weight, unused, dispatched),
+      std::invalid_argument);
 }
