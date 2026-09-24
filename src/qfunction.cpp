@@ -20,14 +20,18 @@ void qfunction_create(QFunctionUser user, QFunction& qf) {
     qf.user = user;
 }
 
-static void check_field(const std::vector<QFunctionField>& fields, const std::string& name, int size,
-                        EvalMode eval_mode, const char* who) {
+// Names must be unique across inputs AND outputs (as in libCEED): an Operator
+// sets fields by name, so a name shared by an input and an output is ambiguous.
+static void check_field(const QFunction& qf, const std::string& name, int size, EvalMode eval_mode,
+                        const char* who) {
   if (size <= 0) throw std::invalid_argument(std::string(who) + ": size must be positive");
   if (eval_mode == EvalMode::Weight && size != 1) {
     throw std::invalid_argument(std::string(who) + ": an EvalMode::Weight field must have size 1");
   }
-  for (const QFunctionField& f : fields) {
-    if (f.name == name) throw std::invalid_argument(std::string(who) + ": duplicate field name '" + name + "'");
+  for (const auto* fields : {&qf.inputs, &qf.outputs}) {
+    for (const QFunctionField& f : *fields) {
+      if (f.name == name) throw std::invalid_argument(std::string(who) + ": duplicate field name '" + name + "'");
+    }
   }
 }
 
@@ -37,7 +41,7 @@ static void check_field(const std::vector<QFunctionField>& fields, const std::st
   @ref CeedQFunctionAddInput (interface/ceed-qfunction.c)
 **/
 void qfunction_add_input(QFunction& qf, const std::string& name, int size, EvalMode eval_mode) {
-  check_field(qf.inputs, name, size, eval_mode, "qfunction_add_input");
+  check_field(qf, name, size, eval_mode, "qfunction_add_input");
   qf.inputs.push_back({name, size, eval_mode});
 }
 
@@ -50,7 +54,7 @@ void qfunction_add_output(QFunction& qf, const std::string& name, int size, Eval
   if (eval_mode == EvalMode::Weight) {
     throw std::invalid_argument("qfunction_add_output: EvalMode::Weight is input-only");
   }
-  check_field(qf.outputs, name, size, eval_mode, "qfunction_add_output");
+  check_field(qf, name, size, eval_mode, "qfunction_add_output");
   qf.outputs.push_back({name, size, eval_mode});
 }
 

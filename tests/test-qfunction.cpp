@@ -45,8 +45,10 @@ TEST_CASE("qfunction_create/add reject invalid arguments", "[qfunction]") {
 
   fem::qfunction_add_input(qf, "u", 1, fem::EvalMode::Interp);
   REQUIRE_THROWS_AS(fem::qfunction_add_input(qf, "u", 1, fem::EvalMode::Grad), std::invalid_argument);
-  // the same name as an input is fine for an output (libCEED's mass: "u" in, "v" out, but nothing forbids it)
-  REQUIRE_NOTHROW(fem::qfunction_add_output(qf, "u", 1, fem::EvalMode::Interp));
+  // names are unique across inputs and outputs too (an Operator sets fields by name)
+  REQUIRE_THROWS_AS(fem::qfunction_add_output(qf, "u", 1, fem::EvalMode::Interp), std::invalid_argument);
+  REQUIRE_NOTHROW(fem::qfunction_add_output(qf, "v", 1, fem::EvalMode::Interp));
+  REQUIRE_THROWS_AS(fem::qfunction_add_input(qf, "v", 1, fem::EvalMode::Interp), std::invalid_argument);
 }
 
 TEST_CASE("qfunction_create resets a previously used QFunction", "[qfunction]") {
