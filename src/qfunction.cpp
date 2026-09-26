@@ -38,6 +38,11 @@ static void check_field(const QFunction& qf, const std::string& name, int size, 
 /**
   @brief Add an input field; field index = order of addition (in[0], in[1], ...)
 
+  @param[in,out] qf        The `QFunction`
+  @param[in]     name      Field name, unique across inputs and outputs (operator_set_field looks it up)
+  @param[in]     size      Components per point: num_comp (Interp/None), num_comp*dim (Grad), 1 (Weight)
+  @param[in]     eval_mode How the Operator maps the field to quadrature points
+
   @ref CeedQFunctionAddInput (interface/ceed-qfunction.c)
 **/
 void qfunction_add_input(QFunction& qf, const std::string& name, int size, EvalMode eval_mode) {
@@ -47,6 +52,11 @@ void qfunction_add_input(QFunction& qf, const std::string& name, int size, EvalM
 
 /**
   @brief Add an output field; field index = order of addition (out[0], out[1], ...)
+
+  @param[in,out] qf        The `QFunction`
+  @param[in]     name      Field name, unique across inputs and outputs (operator_set_field looks it up)
+  @param[in]     size      Components per point: num_comp (Interp/None), num_comp*dim (Grad)
+  @param[in]     eval_mode How the Operator maps the field back from quadrature points (not Weight)
 
   @ref CeedQFunctionAddOutput (interface/ceed-qfunction.c)
 **/

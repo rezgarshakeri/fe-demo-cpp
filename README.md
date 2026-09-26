@@ -1,66 +1,10 @@
 # fe-demo-cpp
 
 A from-scratch C++ matrix-free finite-element library, built mirroring [libCEED](https://github.com/CEED/libCEED)'s architecture
-(and, through it, [Ratel](https://gitlab.com/micromorph/ratel)). Long-term
-goal: a CPU + MPI + CUDA matrix-free solid mechanics solver in 3D.
+(and, through it, [Ratel](https://gitlab.com/micromorph/ratel)).
 
 Everything is hand-written here rather than pulled in as a libCEED
-dependency. The library currently has no dependencies at all: no MPI, no
-PETSc, no CUDA.
-
-## Roadmap
-
-Done: **basis + tensor contraction**, **element restriction**.
-
-**Current branch (`rezgar/setup-qfunc-opt`): QFunction + Operator.**
-Goal: a PETSc-free, single-file pipeline like libCEED's
-`examples/ceed/ex1-volume.c`. It builds a structured mesh, restriction, bases,
-QFunctions and operators directly, then computes the domain volume as
-`1^T M 1` and checks it against the exact value. (Note `examples/petsc/bpsraw.c`
-is "raw" only in skipping DMPlex, it still uses PETSc for `Vec`/`KSP`/MPI.
-`ex1-volume.c` has no PETSc at all.)
-
-Milestone A: ex1-volume
-- [x] `EvalMode::Weight`: tensor-product quadrature weights
-      (`w[q] = prod_d q_weight_1d[q_d]`); test that they sum to `2^dim`
-- [x] Decide how quadrature-point data (qdata) is stored. libCEED uses a
-      *strided* restriction; qdata is never shared between elements, so we
-      could instead treat `EVAL_NONE` fields as already in Q-vector layout
-- [ ] `QFunction`: callback over `Q` points (times `num_elem`), named input and
-      output fields with size and `EvalMode`, optional context. Decide the
-      in/out layout (libCEED: `[size][Q]` per field)
-- [ ] `Operator`: named fields tying restriction + basis + vector (active or
-      passive). Apply = restrict -> basis eval -> QFunction -> basis transpose
-      -> restrict transpose. Test against a hand-composed version and check
-      symmetry/adjointness of the mass operator
-- [ ] Cartesian mesh builder for dim 1-3, degree p: offsets + node coordinates
-      (libCEED: `BuildCartesianRestriction`, `SetCartesianMeshCoords`)
-- [ ] Geometry via the mesh basis: `Grad` of the coordinates gives the Jacobian
-      `J`, then QFunction `build_mass` computes `det(J) * w`; QFunction
-      `apply_mass` computes `v = qdata * u`
-- [ ] `examples/ex1-volume`: volume vs exact, for several `dim`, mesh and
-      solution degrees
-
-Milestone B: CEED bakeoff problems (`libCEED/examples/bps.md`)
-- [ ] Own CG solver (no PETSc)
-- [ ] BP1/BP2: mass, right-hand side operator, manufactured solution, error
-- [ ] BP3/BP4: Laplace (`qdata` from `J^-1 J^-T det(J) w`, `Grad` in and out)
-- [ ] BP5/BP6: same with collocated Gauss-Lobatto quadrature
-- [ ] Compare errors against libCEED's own bps output for the same sizes
-
-Later
-- PETSc / DMPlex for unstructured meshes and solvers. Lead: PETSc's
-  `DMPlexGetLocalOffsets` (`petsc/src/dm/impls/plex/plexceed.c`) returns exactly
-  our `offsets`/`num_elem`/`elem_size`/`num_comp`/`l_size`; it needs a `PetscFE`
-  on the DM and `DMPlexSetClosurePermutationTensor` for tensor node ordering.
-  PETSc lives in `~/RATEL/petsc` (`arch-mpich-cuda` has MPI and CUDA)
-- MPI, then CUDA (start from a libCEED `ref`-style kernel, then `shared`)
-- Elasticity: Ratel-style QFunctions
-
-Small open items
-- `basis.cpp`: two signed/unsigned comparison warnings under `-Wall -Wextra`
-- `tensor_basis_apply_grad`: the `u_slice` copy in Transpose mode could be
-  zero-copy (see the `TODO(perf)` comment there)
+dependency. The library has no dependencies: no MPI, no PETSc, no CUDA.
 
 ## What's implemented
 
@@ -82,17 +26,33 @@ Small open items
   libCEED's `CeedBasisApply`)
 
 **Element restriction** (`include/elem-restriction.hpp`, `src/elem-restriction.cpp`)
-- `ElemRestriction` + `elem_restriction_create` (validates sizes and offsets)
+- `elem_restriction_create` (offsets, validated) and
+  `elem_restriction_create_strided` (for quadrature-point data such as qdata;
+  backend strides or user strides)
 - `elem_restriction_apply`: gather (L-vector to E-vector) and its adjoint,
   scatter-add. The E-vector layout matches the basis apply functions, so the
   output feeds straight into them
 - `elem_restriction_get_multiplicity`
 
-`include/transpose-mode.hpp` holds `ContractMode` (`NoTranspose` /
-`Transpose`), shared by all three modules (libCEED's `CeedTransposeMode`).
+**QFunction** (`include/qfunction.hpp`, `src/qfunction.cpp`)
+- The pointwise kernel: a plain function pointer called on a batch of `Q`
+  points, with named input/output fields (size and `EvalMode`), field layout
+  `[size][Q]`, and an optional trivially copyable context
+  (libCEED's `CeedQFunction`)
+- `include/qfunctions/mass.hpp`: `build_mass` (`qdata = det(J) * w`, dim 1-3)
+  and `apply_mass` (`v = qdata * u`)
 
-**Not yet implemented**: QFunction, Operator, strided
-(quadrature-point) restriction, mesh generation, solvers, MPI, CUDA, PETSc.
+**Operator** (`include/operator.hpp`, `src/operator.cpp`)
+- Ties each QFunction field to a restriction, a basis and a vector (active,
+  passive or none), with the consistency checks of libCEED's
+  `CeedOperatorSetField`
+- `operator_apply`: restrict, basis evaluation, QFunction, basis transpose,
+  restrict transpose (scatter-add), batched over all elements
+  (libCEED's `CeedOperatorApply`)
+
+`include/eval-mode.hpp` holds `EvalMode` (`None`, `Interp`, `Grad`, `Weight`) and
+`include/transpose-mode.hpp` holds `ContractMode` (`NoTranspose` / `Transpose`;
+libCEED's `CeedTransposeMode`).
 
 ## Requirements
 
@@ -112,8 +72,9 @@ cmake --build build -j
 Run a subset of the tests by tag or name:
 
 ```bash
+./build/fe_demo_test "[operator]"
+./build/fe_demo_test "[qfunction]"
 ./build/fe_demo_test "[elem-restriction]"
 ./build/fe_demo_test "[manufactured]"
-./build/fe_demo_test "[transpose]"
 ./build/fe_demo_test --list-tests
 ```

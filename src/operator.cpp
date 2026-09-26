@@ -119,6 +119,8 @@ void operator_set_field(Operator& op, const std::string& name, std::optional<Ele
 /**
   @brief Check that an `Operator` is ready to apply: every field set, num_elem known
 
+  @param[in] op The `Operator`; throws std::invalid_argument if not ready
+
   @ref CeedOperatorCheckReady (interface/ceed-operator.c)
 **/
 void operator_check_ready(const Operator& op) {

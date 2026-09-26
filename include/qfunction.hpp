@@ -37,6 +37,15 @@ void qfunction_create(QFunctionUser user, QFunction& qf);
 void qfunction_add_input(QFunction& qf, const std::string& name, int size, EvalMode eval_mode);
 void qfunction_add_output(QFunction& qf, const std::string& name, int size, EvalMode eval_mode);
 
+/**
+  @brief Store a byte copy of the user context; the user function receives it as `void* ctx`
+
+  @param[in,out] qf   The `QFunction`
+  @param[in]     data Context struct; must be trivially copyable (plain data, no pointers to host memory)
+                      so it can be byte-copied, e.g. to a GPU
+
+  @ref CeedQFunctionSetContext (interface/ceed-qfunction.c)
+**/
 template <class T>
 void qfunction_set_context(QFunction& qf, const T& data) {
   static_assert(std::is_trivially_copyable_v<T>, "QFunction context must be trivially copyable");
