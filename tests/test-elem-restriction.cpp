@@ -2,6 +2,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <stdexcept>
 #include "elem-restriction.hpp"
+#include "tensor-contract.hpp"
 
 using Catch::Approx;
 
@@ -224,4 +225,176 @@ TEST_CASE("elem_restriction_get_multiplicity counts per component and leaves unt
                                         0, 0};           // outside every element
   REQUIRE(mult.size() == expected.size());
   for (size_t i = 0; i < expected.size(); ++i) REQUIRE(mult[i] == Approx(expected[i]));
+}
+
+// ---------------------------------------------------------------------
+// Strided restriction (quadrature-point data). The L-vector index of
+// (node i, component k, element e) is i*s0 + k*s1 + e*s2; nothing is
+// shared. Backend strides = our own E/Q-vector layout, so gather is a
+// plain copy.
+// ---------------------------------------------------------------------
+
+namespace {
+double dot(const std::vector<double>& a, const std::vector<double>& b) {
+  double s = 0.0;
+  for (size_t i = 0; i < a.size(); ++i) s += a[i] * b[i];
+  return s;
+}
+std::vector<double> ramp(size_t n, double scale) {  // deterministic, non-symmetric test data
+  std::vector<double> v(n);
+  for (size_t i = 0; i < n; ++i) v[i] = scale * (0.37 * i - 1.3 + 0.01 * (i % 7) * (i % 5));
+  return v;
+}
+}  // namespace
+
+TEST_CASE("elem_restriction_create_strided: backend strides fill in every field",
+          "[elem-restriction][strided]") {
+  fem::ElemRestriction r;
+  fem::elem_restriction_create_strided(3, 4, 2, 24, r);  // num_elem=3, elem_size=4, num_comp=2
+
+  REQUIRE(r.type == fem::RestrictionType::Strided);
+  REQUIRE(r.has_backend_strides);
+  REQUIRE(r.num_elem == 3);
+  REQUIRE(r.elem_size == 4);
+  REQUIRE(r.num_comp == 2);
+  REQUIRE(r.l_size == 24);
+  REQUIRE(r.e_size == 24);
+  REQUIRE(r.offsets.empty());
+  // {num_elem, elem_size * num_elem, 1}: E[(k * elem_size + i) * num_elem + e]
+  REQUIRE(r.strides == std::array<int, 3>{3, 12, 1});
+}
+
+TEST_CASE("elem_restriction_create_strided: user strides are stored, not flagged as backend",
+          "[elem-restriction][strided]") {
+  fem::ElemRestriction r;
+  fem::elem_restriction_create_strided(2, 3, 2, 12, {1, 3, 6}, r);
+  REQUIRE(r.type == fem::RestrictionType::Strided);
+  REQUIRE_FALSE(r.has_backend_strides);
+  REQUIRE(r.strides == std::array<int, 3>{1, 3, 6});
+}
+
+TEST_CASE("elem_restriction_create_strided: rejects invalid sizes and out-of-range strides",
+          "[elem-restriction][strided]") {
+  fem::ElemRestriction r;
+  REQUIRE_THROWS_AS(fem::elem_restriction_create_strided(0, 4, 1, 8, r), std::invalid_argument);
+  REQUIRE_THROWS_AS(fem::elem_restriction_create_strided(2, 0, 1, 8, r), std::invalid_argument);
+  REQUIRE_THROWS_AS(fem::elem_restriction_create_strided(2, 4, 0, 8, r), std::invalid_argument);
+  REQUIRE_THROWS_AS(fem::elem_restriction_create_strided(2, 4, 1, 0, r), std::invalid_argument);
+
+  // backend: needs l_size >= num_elem * elem_size * num_comp = 16
+  REQUIRE_THROWS_AS(fem::elem_restriction_create_strided(2, 4, 2, 15, r), std::invalid_argument);
+  REQUIRE_NOTHROW(fem::elem_restriction_create_strided(2, 4, 2, 16, r));
+
+  // user strides: largest index (3-1)*1 + (2-1)*3 + (2-1)*6 = 11, so l_size 12 fits and 11 doesn't
+  REQUIRE_NOTHROW(fem::elem_restriction_create_strided(2, 3, 2, 12, {1, 3, 6}, r));
+  REQUIRE_THROWS_AS(fem::elem_restriction_create_strided(2, 3, 2, 11, {1, 3, 6}, r), std::invalid_argument);
+  REQUIRE_THROWS_AS(fem::elem_restriction_create_strided(2, 3, 2, 12, {-1, 3, 6}, r), std::invalid_argument);
+}
+
+TEST_CASE("elem_restriction_create: resets a struct previously used as strided",
+          "[elem-restriction][strided]") {
+  fem::ElemRestriction r;
+  fem::elem_restriction_create_strided(2, 2, 1, 4, r);
+  fem::elem_restriction_create(2, 2, 1, 1, 3, {0, 1, 1, 2}, r);
+  REQUIRE(r.type == fem::RestrictionType::Offset);
+  REQUIRE_FALSE(r.has_backend_strides);
+}
+
+TEST_CASE("elem_restriction_apply: backend-strided gather is the identity (pins the layout)",
+          "[elem-restriction][strided]") {
+  fem::ElemRestriction r;
+  fem::elem_restriction_create_strided(3, 4, 2, 24, r);
+
+  std::vector<double> L(r.l_size);
+  for (size_t g = 0; g < L.size(); ++g) L[g] = static_cast<double>(g);
+
+  std::vector<double> E;
+  fem::elem_restriction_apply(r, fem::ContractMode::NoTranspose, L, E);
+  REQUIRE(E.size() == static_cast<size_t>(r.e_size));
+  REQUIRE(E == L);  // bitwise: backend strides are exactly the E-vector layout
+}
+
+TEST_CASE("elem_restriction_apply: user strides gather in the requested layout",
+          "[elem-restriction][strided]") {
+  // libCEED's CPU layout (element outermost): strides {1, elem_size, elem_size * num_comp}
+  // num_elem=2, elem_size=3, num_comp=2 -> L index = i + 3k + 6e.
+  fem::ElemRestriction r;
+  fem::elem_restriction_create_strided(2, 3, 2, 12, {1, 3, 6}, r);
+
+  std::vector<double> L(r.l_size);
+  for (size_t g = 0; g < L.size(); ++g) L[g] = static_cast<double>(g);
+
+  std::vector<double> E;
+  fem::elem_restriction_apply(r, fem::ContractMode::NoTranspose, L, E);
+
+  // E[(k * 3 + i) * 2 + e] = L[i + 3k + 6e]
+  const std::vector<double> expected = {0, 6, 1, 7, 2, 8, 3, 9, 4, 10, 5, 11};
+  REQUIRE(E.size() == expected.size());
+  for (size_t idx = 0; idx < expected.size(); ++idx) REQUIRE(E[idx] == Approx(expected[idx]));
+}
+
+TEST_CASE("elem_restriction_apply: strided Transpose is the adjoint of NoTranspose",
+          "[elem-restriction][strided]") {
+  fem::ElemRestriction backend, user;
+  fem::elem_restriction_create_strided(3, 4, 2, 24, backend);
+  fem::elem_restriction_create_strided(2, 3, 2, 14, {1, 3, 6}, user);  // l_size > used: entries 12, 13 untouched
+
+  for (const fem::ElemRestriction* r : {&backend, &user}) {
+    const auto u = ramp(r->l_size, 1.0);
+    const auto w = ramp(r->e_size, -0.5);
+
+    std::vector<double> Eu;
+    fem::elem_restriction_apply(*r, fem::ContractMode::NoTranspose, u, Eu);
+    std::vector<double> ETw(r->l_size, 0.0);
+    fem::elem_restriction_apply(*r, fem::ContractMode::Transpose, w, ETw);
+
+    REQUIRE(ETw.size() == static_cast<size_t>(r->l_size));
+    REQUIRE(dot(Eu, w) == Approx(dot(u, ETw)).margin(1e-12));
+  }
+}
+
+TEST_CASE("elem_restriction_apply: strided Transpose accumulates, doesn't overwrite",
+          "[elem-restriction][strided]") {
+  fem::ElemRestriction r;
+  fem::elem_restriction_create_strided(2, 2, 1, 4, r);
+
+  const std::vector<double> E = {1, 2, 3, 4};
+  std::vector<double> L = {10, 20, 30, 40};
+  fem::elem_restriction_apply(r, fem::ContractMode::Transpose, E, L);
+  REQUIRE(L == std::vector<double>{11, 22, 33, 44});  // backend strides: E and L share a layout
+}
+
+TEST_CASE("elem_restriction_get_multiplicity: strided is 1 where used, 0 elsewhere",
+          "[elem-restriction][strided][multiplicity]") {
+  fem::ElemRestriction r;
+  fem::elem_restriction_create_strided(2, 3, 2, 14, {1, 3, 6}, r);  // indices 0..11 used
+
+  std::vector<double> mult;
+  fem::elem_restriction_get_multiplicity(r, mult);
+  REQUIRE(mult.size() == 14);
+  for (int g = 0; g < 14; ++g) REQUIRE(mult[g] == Approx(g < 12 ? 1.0 : 0.0));
+}
+
+TEST_CASE("elem_restriction_apply: backend strides match the basis Q-vector layout",
+          "[elem-restriction][strided][basis]") {
+  // The point of backend strides: a Q-vector produced by tensor_basis_apply_interp can be stored
+  // through a backend-strided restriction (qdata) and read back unchanged, with no reshuffle.
+  const int dim = 2, num_comp = 2, num_elem = 3, P_1d = 3, Q_1d = 4;
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(dim, num_comp, P_1d, Q_1d);
+  const int Qdim = Q_1d * Q_1d;
+
+  const auto u = ramp(num_comp * P_1d * P_1d * num_elem, 1.0);
+  std::vector<double> q_vec;
+  fem::tensor_basis_apply_interp(basis, num_elem, fem::ContractMode::NoTranspose, u, q_vec);
+
+  fem::ElemRestriction r;
+  fem::elem_restriction_create_strided(num_elem, Qdim, num_comp, num_comp * Qdim * num_elem, r);
+
+  std::vector<double> stored(r.l_size, 0.0);
+  fem::elem_restriction_apply(r, fem::ContractMode::Transpose, q_vec, stored);  // Q-vector -> storage
+  std::vector<double> read_back;
+  fem::elem_restriction_apply(r, fem::ContractMode::NoTranspose, stored, read_back);  // storage -> Q-vector
+
+  REQUIRE(stored == q_vec);
+  REQUIRE(read_back == q_vec);
 }

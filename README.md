@@ -1,22 +1,10 @@
 # fe-demo-cpp
 
 A from-scratch C++ matrix-free finite-element library, built mirroring [libCEED](https://github.com/CEED/libCEED)'s architecture
-(and, through it, [Ratel](https://gitlab.com/micromorph/ratel)). Long-term
-goal: a CPU + MPI + CUDA matrix-free solid mechanics solver in 3D.
+(and, through it, [Ratel](https://gitlab.com/micromorph/ratel)).
 
 Everything is hand-written here rather than pulled in as a libCEED
-dependency. The library currently has no dependencies at all: no MPI, no
-PETSc, no CUDA.
-
-## Roadmap
-
-1. **Basis and tensor contraction** (done)
-2. **Element restriction** (done)
-3. **QFunction and Operator**, then the CEED bakeoff problems (BP1-BP6) in a
-   single-file, PETSc-free form, like libCEED's `examples/ceed/ex1-volume.c`:
-   structured Cartesian mesh, restriction, basis, QFunction, operator and a
-   CG solve, all built directly (in progress)
-4. PETSc / DMPlex (unstructured meshes, solvers), MPI, then CUDA
+dependency. The library has no dependencies: no MPI, no PETSc, no CUDA.
 
 ## What's implemented
 
@@ -33,20 +21,38 @@ PETSc, no CUDA.
 - `tensor_basis_apply_interp` / `tensor_basis_apply_grad`: sum-factorized
   evaluation at quadrature points, batched over `num_comp` fields and
   `num_elem` elements, with `ContractMode::Transpose` (the adjoint)
-- `tensor_basis_apply`: dispatches by `EvalMode` (libCEED's `CeedBasisApply`)
+- `tensor_basis_apply_weight`: tensor-product quadrature weights
+- `tensor_basis_apply`: dispatches by `EvalMode` (`Interp`, `Grad`, `Weight`;
+  libCEED's `CeedBasisApply`)
 
 **Element restriction** (`include/elem-restriction.hpp`, `src/elem-restriction.cpp`)
-- `ElemRestriction` + `elem_restriction_create` (validates sizes and offsets)
+- `elem_restriction_create` (offsets, validated) and
+  `elem_restriction_create_strided` (for quadrature-point data such as qdata;
+  backend strides or user strides)
 - `elem_restriction_apply`: gather (L-vector to E-vector) and its adjoint,
   scatter-add. The E-vector layout matches the basis apply functions, so the
   output feeds straight into them
 - `elem_restriction_get_multiplicity`
 
-`include/transpose-mode.hpp` holds `ContractMode` (`NoTranspose` /
-`Transpose`), shared by all three modules (libCEED's `CeedTransposeMode`).
+**QFunction** (`include/qfunction.hpp`, `src/qfunction.cpp`)
+- The pointwise kernel: a plain function pointer called on a batch of `Q`
+  points, with named input/output fields (size and `EvalMode`), field layout
+  `[size][Q]`, and an optional trivially copyable context
+  (libCEED's `CeedQFunction`)
+- `include/qfunctions/mass.hpp`: `build_mass` (`qdata = det(J) * w`, dim 1-3)
+  and `apply_mass` (`v = qdata * u`)
 
-**Not yet implemented**: QFunction, Operator, `EvalMode::Weight`, strided
-(quadrature-point) restriction, mesh generation, solvers, MPI, CUDA, PETSc.
+**Operator** (`include/operator.hpp`, `src/operator.cpp`)
+- Ties each QFunction field to a restriction, a basis and a vector (active,
+  passive or none), with the consistency checks of libCEED's
+  `CeedOperatorSetField`
+- `operator_apply`: restrict, basis evaluation, QFunction, basis transpose,
+  restrict transpose (scatter-add), batched over all elements
+  (libCEED's `CeedOperatorApply`)
+
+`include/eval-mode.hpp` holds `EvalMode` (`None`, `Interp`, `Grad`, `Weight`) and
+`include/transpose-mode.hpp` holds `ContractMode` (`NoTranspose` / `Transpose`;
+libCEED's `CeedTransposeMode`).
 
 ## Requirements
 
@@ -66,8 +72,9 @@ cmake --build build -j
 Run a subset of the tests by tag or name:
 
 ```bash
+./build/fe_demo_test "[operator]"
+./build/fe_demo_test "[qfunction]"
 ./build/fe_demo_test "[elem-restriction]"
 ./build/fe_demo_test "[manufactured]"
-./build/fe_demo_test "[transpose]"
 ./build/fe_demo_test --list-tests
 ```

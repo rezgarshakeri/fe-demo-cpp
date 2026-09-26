@@ -13,6 +13,8 @@ add_library(fe_demo STATIC
   src/basis.cpp
   src/tensor-contract.cpp
   src/elem-restriction.cpp
+  src/qfunction.cpp
+  src/operator.cpp
 )
 
 target_include_directories(fe_demo PUBLIC
@@ -31,6 +33,8 @@ add_executable(fe_demo_test
   tests/test-basis.cpp
   tests/test-tensor-contract.cpp
   tests/test-elem-restriction.cpp
+  tests/test-qfunction.cpp
+  tests/test-operator.cpp
 )
 target_link_libraries(fe_demo_test PRIVATE fe_demo Catch2::Catch2WithMain)
 

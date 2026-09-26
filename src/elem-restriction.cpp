@@ -35,10 +35,34 @@ void elem_restriction_apply(const ElemRestriction& restriction, ContractMode t_m
                              const std::vector<double>& in, std::vector<double>& out) {
   int num_comp = restriction.num_comp, elem_size = restriction.elem_size, num_elem = restriction.num_elem;
   int comp_stride = restriction.comp_stride;
-  int l_size = restriction.l_size;
+  int l_size = restriction.l_size, e_size = restriction.e_size;
+  
+  if (restriction.type == RestrictionType::Strided) {
+    const auto& strides = restriction.strides;
+    if (t_mode == ContractMode::NoTranspose) {
+      out.resize(e_size);
+      for (int e = 0; e < num_elem; e++) {
+        for (int k = 0; k < num_comp; k++) {
+          for (int i = 0; i < elem_size; i++) {
+            out[(k * elem_size + i) * num_elem + e] = in[i * strides[0] + k * strides[1] + e * strides[2]];
+          }
+        }
+      }
+    } else {
+      out.resize(l_size);   // not zeroed -- caller's responsibility, same as before
+      for (int e = 0; e < num_elem; e++) {
+        for (int k = 0; k < num_comp; k++) {
+          for (int i = 0; i < elem_size; i++) {
+            out[i * strides[0] + k * strides[1] + e * strides[2]] += in[(k * elem_size + i) * num_elem + e];
+          }
+        }
+      }
+    }
+    return;
+  }
 
   if (t_mode == ContractMode::NoTranspose) {
-    out.resize(num_comp * elem_size * num_elem);
+    out.resize(e_size);
     for (int e = 0; e < num_elem; e++) {
       for (int k = 0; k < num_comp; k++) {
         for (int i = 0; i < elem_size; i++) {
@@ -101,6 +125,7 @@ void elem_restriction_create(const int num_elem, const int elem_size, const int 
       throw std::invalid_argument("elem_restriction_create: offsets (including component offsets) must be in the range [0, l_size - 1]");
     }
   }
+  restriction.type = RestrictionType::Offset;
   restriction.num_elem = num_elem;
   restriction.elem_size = elem_size;
   restriction.num_comp = num_comp;
@@ -108,6 +133,74 @@ void elem_restriction_create(const int num_elem, const int elem_size, const int 
   restriction.l_size = l_size;
   restriction.e_size = num_comp * elem_size * num_elem;
   restriction.offsets = offsets;
+  restriction.strides = {};
+  restriction.has_backend_strides = false;
+}
+
+/**
+  @brief Create a strided `ElemRestriction` with user-provided strides
+
+  L-vector index of (node i, component k, element e) is i*strides[0] + k*strides[1] + e*strides[2].
+  Nothing is shared between elements, so there is no offsets array.
+
+  @param[in]  num_elem    Number of elements
+  @param[in]  elem_size   Points per element (e.g. Q_1d^dim for quadrature-point data)
+  @param[in]  num_comp    Number of components per point
+  @param[in]  l_size      Size of the L-vector; every strided index must be < l_size
+  @param[in]  strides     (node, component, element) strides, all >= 0
+  @param[out] restriction The `ElemRestriction` to fill in
+
+  @ref CeedElemRestrictionCreateStrided (interface/ceed-elemrestriction.c)
+**/
+void elem_restriction_create_strided(const int num_elem, const int elem_size, const int num_comp, const int l_size,
+                                     const std::array<int, 3>& strides, ElemRestriction& restriction) {
+  if (num_elem <= 0) throw std::invalid_argument("elem_restriction_create_strided: num_elem must be positive");
+  if (elem_size <= 0) throw std::invalid_argument("elem_restriction_create_strided: elem_size must be at least 1");
+  if (num_comp <= 0) throw std::invalid_argument("elem_restriction_create_strided: num_comp must be at least 1");
+  if (l_size <= 0) throw std::invalid_argument("elem_restriction_create_strided: l_size must be positive");
+  for (int s : strides) {
+    if (s < 0) throw std::invalid_argument("elem_restriction_create_strided: strides must be non-negative");
+  }
+  // Strides are non-negative, so the largest index is at the last node/component/element.
+  const long long max_index = (long long)(elem_size - 1) * strides[0] + (long long)(num_comp - 1) * strides[1] +
+                              (long long)(num_elem - 1) * strides[2];
+  if (max_index >= l_size) {
+    throw std::invalid_argument("elem_restriction_create_strided: strided indices must be in the range [0, l_size - 1]");
+  }
+
+  restriction.type                = RestrictionType::Strided;
+  restriction.num_elem            = num_elem;
+  restriction.elem_size           = elem_size;
+  restriction.num_comp            = num_comp;
+  restriction.comp_stride         = 0;  // Offset only
+  restriction.l_size              = l_size;
+  restriction.e_size              = num_comp * elem_size * num_elem;
+  restriction.offsets.clear();
+  restriction.strides             = strides;
+  restriction.has_backend_strides = false;
+}
+
+/**
+  @brief Create a strided `ElemRestriction` with backend strides
+
+  Backend strides {num_elem, elem_size * num_elem, 1} match our own E/Q-vector layout
+  E[(k * elem_size + i) * num_elem + e], so the L-vector is laid out exactly like the Q-vectors
+  tensor_basis_apply_* produce, and gather/scatter is a plain copy. Code outside the restriction
+  should never index such a vector directly: a blocked or GPU backend is free to change these
+  strides, and everything that goes through the restriction keeps working.
+
+  @param[in]  num_elem    Number of elements
+  @param[in]  elem_size   Points per element
+  @param[in]  num_comp    Number of components per point
+  @param[in]  l_size      Size of the L-vector, at least num_elem * elem_size * num_comp
+  @param[out] restriction The `ElemRestriction` to fill in
+
+  @ref CeedElemRestrictionCreateStrided with CEED_STRIDES_BACKEND (interface/ceed-elemrestriction.c)
+**/
+void elem_restriction_create_strided(const int num_elem, const int elem_size, const int num_comp, const int l_size,
+                                     ElemRestriction& restriction) {
+  elem_restriction_create_strided(num_elem, elem_size, num_comp, l_size, {num_elem, elem_size * num_elem, 1}, restriction);
+  restriction.has_backend_strides = true;
 }
 
 /**
