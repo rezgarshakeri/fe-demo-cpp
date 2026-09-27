@@ -41,3 +41,27 @@ target_link_libraries(fe_demo_test PRIVATE fe_demo Catch2::Catch2WithMain)
 include(CTest)
 enable_testing()
 add_test(NAME fe_demo_test COMMAND fe_demo_test)
+
+# CUDA backend (optional): cmake -S . -B build-cuda -DFE_DEMO_CUDA=ON
+# The CPU library and tests above never need nvcc.
+option(FE_DEMO_CUDA "Build the CUDA backend and its tests" OFF)
+if(FE_DEMO_CUDA)
+  if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES native)  # the GPU(s) in this machine; override with -DCMAKE_CUDA_ARCHITECTURES=...
+  endif()
+  enable_language(CUDA)
+  find_package(CUDAToolkit REQUIRED)
+  set(CMAKE_CUDA_STANDARD 17)
+  set(CMAKE_CUDA_STANDARD_REQUIRED ON)
+
+  add_library(fe_demo_cuda STATIC
+    src/cuda/device-info.cpp
+  )
+  target_link_libraries(fe_demo_cuda PUBLIC fe_demo CUDA::cudart)
+
+  add_executable(fe_demo_cuda_test
+    tests/cuda/test-device.cu
+  )
+  target_link_libraries(fe_demo_cuda_test PRIVATE fe_demo_cuda Catch2::Catch2WithMain)
+  add_test(NAME fe_demo_cuda_test COMMAND fe_demo_cuda_test)
+endif()
