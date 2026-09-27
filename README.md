@@ -4,7 +4,8 @@ A from-scratch C++ matrix-free finite-element library, built mirroring [libCEED]
 (and, through it, [Ratel](https://gitlab.com/micromorph/ratel)).
 
 Everything is hand-written here rather than pulled in as a libCEED
-dependency. The library has no dependencies: no MPI, no PETSc, no CUDA.
+dependency. The core library has no dependencies: no MPI, no PETSc, no CUDA.
+The CUDA part is optional and off by default.
 
 ## What's implemented
 
@@ -50,6 +51,11 @@ dependency. The library has no dependencies: no MPI, no PETSc, no CUDA.
   restrict transpose (scatter-add), batched over all elements
   (libCEED's `CeedOperatorApply`)
 
+**CUDA infrastructure** (`include/cuda/`, `src/cuda/`; optional, `-DFE_DEMO_CUDA=ON`)
+- `CUDA_CHECK` / `CUDA_CHECK_LAUNCH`: turn CUDA errors into exceptions with file and line
+- `DeviceArray<T>`: move-only owner of a GPU allocation, with explicit host/device copies
+- `device_info`: device limits (shared memory, threads per block, SMs) and free memory
+
 `include/eval-mode.hpp` holds `EvalMode` (`None`, `Interp`, `Grad`, `Weight`) and
 `include/transpose-mode.hpp` holds `ContractMode` (`NoTranspose` / `Transpose`;
 libCEED's `CeedTransposeMode`).
@@ -67,6 +73,15 @@ Catch2 is fetched automatically via CMake's `FetchContent`.
 cmake -S . -B build
 cmake --build build -j
 ./build/fe_demo_test
+```
+
+CUDA (optional; needs the CUDA toolkit and a GPU, built for the GPU in the
+machine unless `-DCMAKE_CUDA_ARCHITECTURES=...` is given):
+
+```bash
+cmake -S . -B build-cuda -DFE_DEMO_CUDA=ON
+cmake --build build-cuda -j
+./build-cuda/fe_demo_cuda_test
 ```
 
 Run a subset of the tests by tag or name:
