@@ -56,6 +56,14 @@ The CUDA part is optional and off by default.
 - `DeviceArray<T>`: move-only owner of a GPU allocation, with explicit host/device copies
 - `device_info`: device limits (shared memory, threads per block, SMs) and free memory
 
+**CUDA element restriction** (`include/cuda/cuda-elem-restriction.hpp`, `src/cuda/cuda-elem-restriction.cu`)
+- `fem::cuda::elem_restriction_create`: copies a CPU restriction (offset or
+  strided) to the device once
+- `fem::cuda::elem_restriction_apply`: gather and scatter-add kernels; the
+  scatter-add is either atomic (`atomicAdd`) or deterministic (a precomputed
+  transpose map, one thread per L-vector node, bitwise reproducible)
+  (libCEED's `cuda-ref` restriction)
+
 `include/eval-mode.hpp` holds `EvalMode` (`None`, `Interp`, `Grad`, `Weight`) and
 `include/transpose-mode.hpp` holds `ContractMode` (`NoTranspose` / `Transpose`;
 libCEED's `CeedTransposeMode`).

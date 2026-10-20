@@ -55,6 +55,9 @@ DeviceInfo device_info(int device) {
   return info;
 }
 
+/**
+  @brief Human-readable summary of a `DeviceInfo`, sizes in KiB / MiB
+**/
 std::string to_string(const DeviceInfo& info) {
   constexpr double KiB = 1024.0, MiB = 1024.0 * 1024.0;
   std::ostringstream s;

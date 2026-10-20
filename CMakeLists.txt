@@ -56,11 +56,13 @@ if(FE_DEMO_CUDA)
 
   add_library(fe_demo_cuda STATIC
     src/cuda/device-info.cpp
+    src/cuda/cuda-elem-restriction.cu
   )
   target_link_libraries(fe_demo_cuda PUBLIC fe_demo CUDA::cudart)
 
   add_executable(fe_demo_cuda_test
     tests/cuda/test-device.cu
+    tests/cuda/test-cuda-elem-restriction.cu
   )
   target_link_libraries(fe_demo_cuda_test PRIVATE fe_demo_cuda Catch2::Catch2WithMain)
   add_test(NAME fe_demo_cuda_test COMMAND fe_demo_cuda_test)
