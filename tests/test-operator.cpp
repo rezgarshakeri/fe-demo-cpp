@@ -350,3 +350,41 @@ TEST_CASE("operator_apply rejects unset fields and a wrong-sized input", "[opera
   fem::Operator op = m.mass(m.qdata(1, 1));
   REQUIRE_THROWS_AS(fem::operator_apply(op, {1, 1}, v), std::invalid_argument);
 }
+
+// v = qdata * du, with a Grad input AND a Grad output (Laplacian / BP3-style).
+// The Grad transpose must overwrite its E-vector: operator_apply reuses its
+// scratch E-vector, which still holds the gathered input at that point.
+static int apply_diff(void* /*ctx*/, int Q, const double* const* in, double* const* out) {
+  const double *du = in[0], *qdata = in[1];
+  double* dv = out[0];
+  for (int p = 0; p < Q; ++p) dv[p] = qdata[p] * du[p];
+  return 0;
+}
+
+TEST_CASE("operator_apply: 1D Laplacian with a Grad output matches the stiffness matrix", "[operator][apply]") {
+  Mesh1D m;  // nodes 0, 1, 2; unit elements, so J = dx/dX = 1/2
+  fem::QFunction qf;
+  fem::qfunction_create(apply_diff, qf);
+  fem::qfunction_add_input(qf, "du", 1, EvalMode::Grad);
+  fem::qfunction_add_input(qf, "qdata", 1, EvalMode::None);
+  fem::qfunction_add_output(qf, "dv", 1, EvalMode::Grad);
+
+  // integral of u' v' dx = sum w * (du/dX) (dv/dX) / J  ->  qdata = w / J = 2 w
+  std::vector<double> qdata;
+  fem::tensor_basis_apply_weight(m.basis, 2, ContractMode::NoTranspose, qdata);
+  for (double& x : qdata) x *= 2.0;
+
+  fem::Operator op;
+  fem::operator_create(qf, op);
+  fem::operator_set_field(op, "du", m.rstr, m.basis, fem::vector_active());
+  fem::operator_set_field(op, "qdata", m.q_rstr, std::nullopt, fem::vector_passive(qdata));
+  fem::operator_set_field(op, "dv", m.rstr, m.basis, fem::vector_active());
+
+  // K = [1 -1 0; -1 2 -1; 0 -1 1], u = (0, 1, 4): K u = (-1, -2, 3)
+  std::vector<double> v;
+  fem::operator_apply(op, {0, 1, 4}, v);
+  REQUIRE(v.size() == 3);
+  REQUIRE(v[0] == Approx(-1.0));
+  REQUIRE(v[1] == Approx(-2.0));
+  REQUIRE(v[2] == Approx(3.0));
+}

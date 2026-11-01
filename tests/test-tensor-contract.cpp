@@ -1,5 +1,6 @@
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <cmath>
 #include <cstdlib>
 #include <stdexcept>
@@ -644,4 +645,80 @@ TEST_CASE("tensor_basis_apply: EvalMode::Weight dispatches, and rejects Transpos
   REQUIRE_THROWS_AS(
       fem::tensor_basis_apply(basis, 3, fem::ContractMode::Transpose, fem::EvalMode::Weight, unused, dispatched),
       std::invalid_argument);
+}
+
+// ---------------------------------------------------------------------
+// Apply overwrites, ApplyAdd adds (libCEED's CeedBasisApply / CeedBasisApplyAdd)
+// ---------------------------------------------------------------------
+
+TEST_CASE("tensor_basis_apply overwrites v in both modes, whatever v held", "[tensor-contract][apply-add]") {
+  const int dim = GENERATE(1, 2, 3);
+  const auto eval_mode = GENERATE(fem::EvalMode::Interp, fem::EvalMode::Grad);
+  const auto t_mode = GENERATE(fem::ContractMode::NoTranspose, fem::ContractMode::Transpose);
+  const int num_comp = 2, num_elem = 3, P_1d = 3, Q_1d = 4;
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(dim, num_comp, P_1d, Q_1d);
+
+  const int nodes = num_comp * static_cast<int>(std::pow(P_1d, dim)) * num_elem;
+  const int qpts = (eval_mode == fem::EvalMode::Grad ? dim : 1) * num_comp * static_cast<int>(std::pow(Q_1d, dim)) * num_elem;
+  const bool transpose = (t_mode == fem::ContractMode::Transpose);
+  const auto u = random_vec(transpose ? qpts : nodes, 5);
+
+  std::vector<double> fresh, stale(transpose ? nodes : qpts, 7.0);  // right size, stale contents
+  fem::tensor_basis_apply(basis, num_elem, t_mode, eval_mode, u, fresh);
+  fem::tensor_basis_apply(basis, num_elem, t_mode, eval_mode, u, stale);
+  REQUIRE(stale.size() == fresh.size());
+  for (size_t i = 0; i < fresh.size(); ++i) REQUIRE(stale[i] == fresh[i]);
+}
+
+TEST_CASE("tensor_basis_apply_add adds the transpose into v", "[tensor-contract][apply-add]") {
+  const int dim = GENERATE(1, 2, 3);
+  const auto eval_mode = GENERATE(fem::EvalMode::Interp, fem::EvalMode::Grad);
+  const int num_comp = 2, num_elem = 3, P_1d = 4, Q_1d = 3;  // P > Q: Transpose swaps the roles
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(dim, num_comp, P_1d, Q_1d);
+
+  const int nodes = num_comp * static_cast<int>(std::pow(P_1d, dim)) * num_elem;
+  const int qpts = (eval_mode == fem::EvalMode::Grad ? dim : 1) * num_comp * static_cast<int>(std::pow(Q_1d, dim)) * num_elem;
+  const auto u = random_vec(qpts, 6);
+  const auto v0 = random_vec(nodes, 7);
+
+  std::vector<double> BTu;
+  fem::tensor_basis_apply(basis, num_elem, fem::ContractMode::Transpose, eval_mode, u, BTu);
+  std::vector<double> v = v0;
+  fem::tensor_basis_apply_add(basis, num_elem, fem::ContractMode::Transpose, eval_mode, u, v);
+  REQUIRE(v.size() == v0.size());
+  for (size_t i = 0; i < v.size(); ++i) REQUIRE(v[i] == Approx(v0[i] + BTu[i]).margin(1e-14));
+}
+
+TEST_CASE("tensor_basis_apply_add: an Interp and a Grad output summed in element space",
+          "[tensor-contract][apply-add]") {
+  const int dim = 2, num_comp = 1, num_elem = 4, P_1d = 3, Q_1d = 4;
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(dim, num_comp, P_1d, Q_1d);
+  const int Q2 = Q_1d * Q_1d;
+  const auto q_interp = random_vec(num_comp * Q2 * num_elem, 8);
+  const auto q_grad = random_vec(dim * num_comp * Q2 * num_elem, 9);
+
+  std::vector<double> e, BT_interp, BT_grad;
+  fem::tensor_basis_apply(basis, num_elem, fem::ContractMode::Transpose, fem::EvalMode::Interp, q_interp, e);
+  fem::tensor_basis_apply_add(basis, num_elem, fem::ContractMode::Transpose, fem::EvalMode::Grad, q_grad, e);
+
+  fem::tensor_basis_apply(basis, num_elem, fem::ContractMode::Transpose, fem::EvalMode::Interp, q_interp, BT_interp);
+  fem::tensor_basis_apply(basis, num_elem, fem::ContractMode::Transpose, fem::EvalMode::Grad, q_grad, BT_grad);
+  for (size_t i = 0; i < e.size(); ++i) REQUIRE(e[i] == Approx(BT_interp[i] + BT_grad[i]).margin(1e-14));
+}
+
+TEST_CASE("tensor_basis_apply_add rejects NoTranspose, Weight, and a wrong-sized v", "[tensor-contract][apply-add]") {
+  auto basis = fem::TensorBasis::create_tensor_H1_lagrange(2, 1, 2, 3);
+  const int num_elem = 2;
+  const std::vector<double> q(9 * num_elem, 1.0), nodes_u(4 * num_elem, 1.0);
+  std::vector<double> v(4 * num_elem, 0.0), wrong(3, 0.0), qv(9 * num_elem, 0.0);
+
+  REQUIRE_THROWS_AS(fem::tensor_basis_apply_add(basis, num_elem, fem::ContractMode::NoTranspose,
+                                                fem::EvalMode::Interp, nodes_u, qv),
+                    std::invalid_argument);
+  REQUIRE_THROWS_AS(fem::tensor_basis_apply_add(basis, num_elem, fem::ContractMode::Transpose,
+                                                fem::EvalMode::Weight, q, v),
+                    std::invalid_argument);
+  REQUIRE_THROWS_AS(fem::tensor_basis_apply_add(basis, num_elem, fem::ContractMode::Transpose,
+                                                fem::EvalMode::Interp, q, wrong),
+                    std::invalid_argument);
 }

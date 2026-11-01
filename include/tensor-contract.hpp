@@ -48,9 +48,17 @@ void tensor_basis_apply_weight(const TensorBasis& basis, int num_elem, ContractM
 
 // Single dispatching entry point over tensor_basis_apply_interp/_grad/_weight,
 // matching libCEED's CeedBasisApply(basis, num_elem, t_mode, eval_mode, u, v).
-// u is ignored for EvalMode::Weight.
+// u is ignored for EvalMode::Weight. Like all functions above, it OVERWRITES v,
+// in both modes (v's previous contents never matter).
 void tensor_basis_apply(const TensorBasis& basis, int num_elem, ContractMode t_mode, EvalMode eval_mode,
                          const std::vector<double>& u, std::vector<double>& v);
+
+// Same, but ADDS into v: v += B^T u. Transpose only, Interp or Grad only, and v
+// must already have num_comp * P_1d^dim * num_elem entries (throws otherwise).
+// For several output fields sharing one E-vector: sum their basis transposes in
+// element space, then scatter once. Matches libCEED's CeedBasisApplyAdd.
+void tensor_basis_apply_add(const TensorBasis& basis, int num_elem, ContractMode t_mode, EvalMode eval_mode,
+                            const std::vector<double>& u, std::vector<double>& v);
 
 
 } // namespace fem
